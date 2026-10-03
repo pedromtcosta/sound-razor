@@ -1,0 +1,8 @@
+# Only application sources are needed to build the image.
+**
+!Dockerfile
+!pyproject.toml
+!master_track/
+!master_track/**
+master_track/**/__pycache__/
+master_track/**/*.pyc

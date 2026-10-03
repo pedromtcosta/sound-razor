@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="master-track-token" content="__SESSION_TOKEN__">
+  <title>Master Track — Your listening room</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">≋</span><span>master<span class="brand-light">track</span><small>YOUR LISTENING ROOM</small></span></a>
+    <button id="home" class="secondary full">⌂ Home</button>
+    <button id="import-open" class="primary full" disabled>＋ Import a recording</button>
+    <div class="library-heading"><h2>Library</h2><span id="project-count">0</span><button id="refresh" class="icon" title="Refresh library" aria-label="Refresh library">↻</button></div>
+    <label class="sr-only" for="search">Search projects</label><input id="search" class="search" placeholder="Search title, artist, album…" type="search">
+    <nav id="library" aria-label="Song projects"></nav>
+    <div class="folder-panel"><span class="eyebrow">PROJECTS FOLDER</span><p id="root-label">No folder selected</p><button id="folder-open" class="text-button">Choose folder <span aria-hidden="true">↗</span></button></div>
+    <div class="local-label"><span class="dot"></span> Local files. Local processing.</div>
+  </aside>
+  <main>
+    <header class="topbar"><span>WORKSPACE <span class="slash">/</span> <span id="breadcrumb">Library</span></span><span class="version">MASTER TRACK · 01</span></header>
+    <div id="notice" role="status" hidden></div>
+    <section id="welcome" class="welcome">
+      <span class="eyebrow">HEAR WHAT'S INSIDE</span><h1>Your songs.<br>Every layer.</h1>
+      <p>Bring a recording into your library, separate its instruments, and listen to each part on its own terms.</p>
+      <button id="welcome-action" class="primary">Choose a projects folder <span aria-hidden="true">↗</span></button>
+      <div class="welcome-lines" aria-hidden="true"><span>01 &nbsp; IMPORT</span><span>02 &nbsp; SEPARATE</span><span>03 &nbsp; LISTEN</span></div>
+    </section>
+    <section id="project" hidden>
+      <div class="project-header"><div class="record-art" aria-hidden="true"><div class="record"><span>MT</span></div></div><div class="project-heading"><span class="eyebrow">SONG PROJECT</span><h1 id="title"></h1><p id="artist"></p><div class="project-tags"><span id="album"></span><span id="source-name"></span></div></div><div class="project-actions"><button id="edit-open" class="secondary">Edit details</button><button id="delete-open" class="secondary danger">Delete song</button></div></div>
+      <div id="project-warning" class="warning" hidden></div>
+      <section class="separation-panel" aria-label="Separate recording"><div><h2>Make room for every instrument.</h2><p id="separation-description">Choose your stems. We'll take care of the separation.</p></div><div class="separation-actions"><label class="sr-only" for="preset">Stem selection</label><select id="preset"><option value="vocals">Vocals &amp; instrumental</option><option value="custom" selected>Custom</option></select><button id="separate" class="primary">Separate tracks <span aria-hidden="true">↗</span></button></div><fieldset id="custom-stems"><legend>Select stems</legend><label><input type="checkbox" value="vocals" checked> Vocals</label><label><input type="checkbox" value="guitar" checked> Guitar</label><label><input type="checkbox" value="bass" checked> Bass</label><label><input type="checkbox" value="drums" checked> Drums</label><label><input type="checkbox" value="piano"> Piano</label><label><input type="checkbox" value="other"> Other</label></fieldset><p id="other-help">Other includes every part you leave unchecked. Without Other, unchecked parts are omitted.</p></section>
+      <section id="job-panel" class="job-panel" hidden aria-live="polite"><div class="job-heading"><span id="job-status"></span><button id="cancel" class="text-button">Cancel</button></div><progress id="job-progress" max="100"></progress><details><summary>Process log</summary><pre id="job-log"></pre></details></section>
+      <div class="mixer-heading"><div><span class="eyebrow">THE MIXER</span><h2>Find your part.</h2></div><button id="reset-mix" class="text-button" disabled>Reset mix</button></div>
+      <div id="audio-status" role="status">Separate this recording to start listening.</div>
+      <div id="tracks" class="tracks"></div>
+      <div class="mix-note">Mute a part to play along. Solo a part to hear it clearly.</div>
+    </section>
+    <footer class="transport"><button id="restart" class="icon" aria-label="Back to start" disabled>↤</button><button id="play" class="play" aria-label="Play" disabled>▶</button><span id="elapsed" class="time">0:00</span><label for="seek" class="sr-only">Playback position</label><input id="seek" type="range" min="0" max="1" step="0.01" value="0" disabled><span id="duration" class="time">0:00</span><div class="master-volume"><label for="master-volume">MASTER</label><input id="master-volume" type="range" min="0" max="1" step="0.01" value="0.7"></div></footer>
+  </main>
+
+  <dialog id="folder-dialog"><form id="folder-form"><div class="dialog-header"><h2>Your projects folder</h2><button type="button" class="icon close-dialog" aria-label="Close">✕</button></div><p>Each song lives in its own subfolder. Select an existing folder or create a new one.</p><label for="folder-path">Folder on this computer</label><div class="input-row"><input id="folder-path" required placeholder="/Users/you/Music/Master Track"><button type="button" id="browse-path" class="secondary">Browse</button></div><div class="folder-browser"><button type="button" id="folder-up" class="text-button">↑ Parent folder</button><div id="folder-children"></div></div><label class="checkbox"><input type="checkbox" id="create-folder"> Create folder if it doesn't exist</label><p class="form-error" id="folder-error" role="alert"></p><button type="submit" class="primary full">Use this folder</button></form></dialog>
+  <dialog id="import-dialog"><form id="import-form"><div class="dialog-header"><h2>Bring a song in.</h2><button type="button" class="icon close-dialog" aria-label="Close">✕</button></div><p>A copy of your recording and its details will be saved in a new project folder.</p><label class="file-drop" for="audio-file"><span class="upload-symbol">＋</span><strong id="file-label">Choose an audio file</strong><span>WAV, FLAC, MP3, Opus, M4A and more</span><input id="audio-file" type="file" accept=".wav,.flac,.mp3,.opus,.ogg,.m4a,.aac,.aiff,.aif" required></label><label for="import-title">Title</label><input id="import-title" maxlength="500" placeholder="Song title"><label for="import-artist">Artist</label><input id="import-artist" maxlength="500" placeholder="Artist name"><div class="two-fields"><div><label for="import-album">Album</label><input id="import-album" maxlength="500" placeholder="Album name"></div><div><label for="import-year">Year</label><input id="import-year" maxlength="500" placeholder="1990"></div></div><progress id="upload-progress" max="100" value="0" hidden></progress><p class="form-error" id="import-error" role="alert"></p><button id="import-submit" type="submit" class="primary full">Create project</button></form></dialog>
+  <dialog id="edit-dialog"><form id="edit-form"><div class="dialog-header"><h2>Song details</h2><button type="button" class="icon close-dialog" aria-label="Close">✕</button></div><label for="edit-title">Title</label><input id="edit-title" maxlength="500"><label for="edit-artist">Artist</label><input id="edit-artist" maxlength="500"><div class="two-fields"><div><label for="edit-album">Album</label><input id="edit-album" maxlength="500"></div><div><label for="edit-year">Year</label><input id="edit-year" maxlength="500"></div></div><p class="form-error" id="edit-error" role="alert"></p><button class="primary full" type="submit">Save details</button></form></dialog>
+  <dialog id="delete-dialog"><form id="delete-form"><div class="dialog-header"><h2>Delete song?</h2><button type="button" class="icon close-dialog" aria-label="Close">✕</button></div><p id="delete-name"></p><p>This permanently deletes the project folder, including its original recording, metadata and separated tracks. This cannot be undone.</p><p id="delete-path" class="delete-path"></p><p id="delete-error" class="form-error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary close-dialog">Keep song</button><button id="delete-submit" type="submit" class="primary danger">Delete song</button></div></form></dialog>
+</body>
+</html>

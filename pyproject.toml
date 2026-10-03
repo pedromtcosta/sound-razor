@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "master-track"
+version = "0.1.0"
+description = "Local audio stem separation with Spotify metadata and YouTube input"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+separation = ["audio-separator[cpu]>=0.30,<0.45"]
+youtube = ["yt-dlp[default]>=2025.1"]
+guitars = ["sam_audio @ git+https://github.com/facebookresearch/sam-audio.git", "soundfile>=0.12", "scipy>=1.10"]
+
+[project.scripts]
+master-track = "master_track.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["master_track*"]
+
+[tool.setuptools.package-data]
+master_track = ["web/*.html", "web/*.css", "web/*.js"]
