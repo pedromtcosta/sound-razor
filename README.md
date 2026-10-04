@@ -18,6 +18,32 @@ FFmpeg converts the input audio, then the `audio-separator` Python library loads
 
 Python dependencies live in `.venv/`. Model files download automatically on first use and are cached in `.sound-razor/models/`. Processing a song runs inference—it does not train or modify the model. The outputs are estimates and can contain bleed or artifacts.
 
+## System requirements
+
+These are planning estimates for inference and playback of typical 3–6 minute songs, not verified minimum requirements. Longer recordings, different models, and other running applications increase resource use.
+
+| Resource | Practical starting point |
+| --- | --- |
+| CPU | A modern 64-bit processor with at least 4 cores. More cores can help some models; the lead/rhythm splitter currently uses 4 CPU threads. |
+| GPU | Optional. Lead/rhythm splitting currently runs on CPU even if a GPU is available. |
+| Memory | Start with 8 GiB of system RAM; 16 GiB is recommended for separation and browser playback together. Consider 32 GiB for long recordings or many tracks. These are estimates, not tested RAM thresholds. |
+| Installation storage | Budget around 5 GiB for Python dependencies, model downloads, and installer caches. Start with at least 10 GiB free to also allow temporary processing files; project storage is additional. Platform-specific packages, especially GPU builds, can use more. |
+| Project storage | Roughly 0.3–1 GiB per 5-minute song with several stems and an optional guitar split. Allow another 1–2 GiB of free working space while processing a song of this length. |
+| Software | Python 3.11, uv, FFmpeg and ffprobe on `PATH`, and a modern browser. YouTube imports also need the `youtube` extra; Deno is recommended for yt-dlp's JavaScript support. |
+| Network | Needed for installation, uncached model downloads, YouTube imports, and metadata/cover lookup. Local-file separation and playback work offline once the required models are cached. |
+
+**Measured on macOS / Apple M2 Max:** the current `.venv` occupies about 1.1 GiB and the cached models about 424 MiB: 52 MiB for six-stem Demucs, 50 MiB for the vocals/instrumental MDX model, and 321 MiB for lead/rhythm separation. Other selected models download separately. This does not include FFmpeg, Python itself, installer caches, or song projects.
+
+A 43-second stereo guitar stem took approximately 31 seconds to split, with peak process memory of 1,417 MiB (about 1.4 GiB), using four CPU threads. That measurement covers only the lead/rhythm CLI process—not initial instrument separation, the browser, or total system memory. It is a reference point, not a runtime guarantee for other machines or full songs.
+
+Storage and playback memory grow with duration and track count:
+
+- At 44.1 kHz stereo, a 5-minute WAV occupies about 50 MiB at 16-bit PCM or 101 MiB at 32-bit float. Lead and rhythm are saved as float WAVs, adding about 202 MiB while retaining the combined guitar file.
+- The browser decodes every active project's stem into memory. Six 5-minute stereo tracks need approximately 606 MiB of decoded audio at 44.1 kHz, or 659 MiB at 48 kHz, plus browser and decoding overhead. Compressed originals do not reduce this playback memory.
+- Reruns keep previous stems until the new ones succeed; guitar splitting also stages a copy of the existing stems. Free working space is needed on both the projects drive and the system temporary-files drive. Allow proportionally more space for longer recordings.
+
+macOS on Apple Silicon has been tested. Native Windows and Linux have not yet been verified end to end. Known Windows gaps include cancellation not terminating the entire child-process tree and project names not fully handling reserved Windows filenames.
+
 ## Local setup
 
 Requirements: Python 3.11, FFmpeg on `PATH`, and uv. From the project directory:
@@ -28,6 +54,16 @@ uv pip install --python .venv/bin/python -e '.[separation,guitars]'
 ```
 
 If this environment is already installed, skip setup. Commands below use its executable directly; activation is unnecessary.
+
+On Windows, use `Scripts` instead of `bin`. In PowerShell, with FFmpeg and ffprobe on `PATH`:
+
+```powershell
+uv venv --python 3.11 .venv
+uv pip install --python .venv\Scripts\python.exe -e ".[separation,guitars,youtube]"
+.\.venv\Scripts\sound-razor.exe ui
+```
+
+The remaining terminal examples use macOS/Linux syntax. Windows setup does not require virtual-environment activation either.
 
 ## Open the UI
 
