@@ -85,12 +85,12 @@ function renderLibrary() {
     button.append(label); button.onclick = () => selectProject(project.id);
     list.append(button);
   }
-  if (!projects.length) list.append(el('p', 'empty-library', query ? 'No matching songs.' : 'Your recordings will appear here.'));
+  if (!projects.length) list.append(el('p', 'empty-library', query ? 'No matching songs.' : (state.root ? 'No projects in this folder. Import a recording to add one.' : 'Choose a projects folder to list its recordings.')));
 }
 function renderProject() {
   const project = activeProject();
   $('welcome').hidden = !!project; $('project').hidden = !project;
-  $('welcome-action').textContent = state.root ? (state.projects.length ? 'Import a recording ＋' : 'Import your first recording ＋') : 'Choose a projects folder ↗';
+  $('welcome-action').textContent = state.root ? 'Import a recording ＋' : 'Choose a projects folder ↗';
   if (!project) { $('breadcrumb').textContent = 'Library'; return; }
   $('breadcrumb').textContent = project.title;
   $('title').textContent = project.title;
@@ -105,7 +105,7 @@ function renderProject() {
   $('separate').textContent = project.stems.length ? 'Separate again ↗' : 'Separate tracks ↗';
   $('separation-description').textContent = project.stems.length
     ? 'A successful rerun replaces this project’s existing stems.'
-    : 'Choose your stems. We’ll take care of the separation.';
+    : 'Select the stems to save. Audio is processed on this computer.';
   renderJob();
   document.querySelectorAll('[data-split-guitar]').forEach(button => { button.disabled = !!jobRunning(); });
   const signature = JSON.stringify([state.root, project.id, project.stems]);
@@ -120,7 +120,7 @@ function renderJob() {
   $('job-panel').hidden = !belongs;
   if (!belongs) return;
   const elapsed = time((job.finished || Date.now()/1000) - job.started);
-  const labels = {running: job.guitar_split ? 'Splitting guitar into lead and rhythm' : 'Separating your recording', cancelling: 'Stopping separation',
+  const labels = {running: job.guitar_split ? 'Splitting guitar into lead and rhythm' : 'Separating audio', cancelling: 'Stopping separation',
     succeeded: 'Separation complete', failed: 'Separation failed', cancelled: 'Separation cancelled'};
   $('job-status').textContent = `${labels[job.status]} · ${elapsed}${job.error ? ` — ${job.error}` : ''}`;
   $('cancel').hidden = !jobRunning(); $('cancel').disabled = job.status === 'cancelling';
@@ -195,7 +195,7 @@ async function loadAudio(project) {
   const epoch = loading;
   controller = new AbortController();
   const signal = controller.signal;
-  if (!project.stems.length) { $('audio-status').textContent = 'Separate this recording to start listening.'; return; }
+  if (!project.stems.length) { $('audio-status').textContent = 'Separate the recording to load tracks into the mixer.'; return; }
   const tracks = [];
   try {
     for (const [i, stem] of project.stems.entries()) {
