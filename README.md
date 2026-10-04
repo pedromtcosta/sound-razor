@@ -47,6 +47,8 @@ Use **Find details** during import or in **Edit details** to search MusicBrainz 
 
 **Import from YouTube** accepts a single video URL and downloads its best available audio with yt-dlp, extracting it to `original.wav` in a new project. Optional title/artist/album/year entries override available video metadata. The dialog shows download logs and cancellation; failed or cancelled downloads do not create partial projects. On success the project opens, ready for separation or **Edit details → Find details**. Install the optional downloader with `uv pip install --python .venv/bin/python -e '.[youtube]'`. FFmpeg is required. Private, restricted, or unavailable videos may fail; the downloader log shows the reason.
 
+## Projects folder structure
+
 ```text
 projects/
 └── Queensryche - Jet City Woman/
