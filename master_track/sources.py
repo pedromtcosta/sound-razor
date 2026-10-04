@@ -1,72 +1,46 @@
-"""Real input acquisition; Spotify supplies metadata only."""
+"""YouTube audio acquisition through yt-dlp."""
 
-import base64
-import json
-import os
 import re
 import subprocess
 import sys
 from pathlib import Path
-from urllib.parse import urlencode, urlparse
-from urllib.request import Request, urlopen
+from urllib.parse import urlparse, parse_qs
 
 
-def spotify_track_id(value: str) -> str:
-    if value.startswith("spotify:track:"):
-        value = value.removeprefix("spotify:track:")
-    elif value.startswith("https://"):
-        url = urlparse(value)
-        if url.hostname != "open.spotify.com":
-            raise ValueError("Expected a Spotify track URL.")
-        match = re.fullmatch(r"/(?:intl-[a-z]+/)?track/([A-Za-z0-9]{22})/?", url.path)
-        if not match:
-            raise ValueError("Expected a Spotify track URL, not an album or playlist.")
-        value = match[1]
-    if not re.fullmatch(r"[A-Za-z0-9]{22}", value):
-        raise ValueError("Expected a 22-character Spotify track ID, URI, or URL.")
-    return value
-
-
-def _json_request(request: Request) -> dict:
-    with urlopen(request, timeout=30) as response:
-        return json.load(response)
-
-
-def spotify_metadata(track: str) -> dict:
-    track_id = spotify_track_id(track)
-    client_id = os.environ.get("SPOTIFY_CLIENT_ID")
-    secret = os.environ.get("SPOTIFY_CLIENT_SECRET")
-    if not client_id or not secret:
-        raise ValueError("Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET for metadata lookup.")
-    credentials = base64.b64encode(f"{client_id}:{secret}".encode()).decode()
-    token = _json_request(Request(
-        "https://accounts.spotify.com/api/token",
-        data=urlencode({"grant_type": "client_credentials"}).encode(),
-        headers={"Authorization": f"Basic {credentials}",
-                 "Content-Type": "application/x-www-form-urlencoded"},
-    ))["access_token"]
-    data = _json_request(Request(
-        f"https://api.spotify.com/v1/tracks/{track_id}",
-        headers={"Authorization": f"Bearer {token}"},
-    ))
-    return {"id": data["id"], "name": data["name"],
-            "artists": [artist["name"] for artist in data["artists"]],
-            "album": data["album"]["name"],
-            "url": data["external_urls"]["spotify"]}
-
-
-def youtube_audio(url: str, directory: Path) -> Path:
+def youtube_url(url: str) -> str:
+    if not isinstance(url, str) or len(url) > 2048:
+        raise ValueError('Enter a YouTube video URL.')
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in {
         "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"
     }:
         raise ValueError("Expected an HTTPS YouTube video URL.")
-    subprocess.run([
+    if parsed.username or parsed.password or parsed.port not in (None, 443):
+        raise ValueError('Expected a YouTube video URL.')
+    if parsed.hostname == 'youtu.be':
+        identifier = parsed.path.strip('/')
+    elif parsed.path == '/watch':
+        identifier = parse_qs(parsed.query).get('v', [''])[0]
+    else:
+        match = re.fullmatch(r'/(?:shorts|live|embed)/([\w-]{11})/?', parsed.path)
+        identifier = match[1] if match else ''
+    if not re.fullmatch(r'[A-Za-z0-9_-]{11}', identifier):
+        raise ValueError('Use a single video URL, not a channel or playlist URL.')
+    return 'https://www.youtube.com/watch?v=' + identifier
+
+
+def youtube_command(url: str, directory: Path) -> list[str]:
+    return [
         sys.executable, "-m", "yt_dlp", "--ignore-config", "--no-playlist",
-        "--no-progress", "--format", "bestaudio/best", "--extract-audio",
+        "--newline", "--progress", "--progress-delta", "1", "--write-info-json",
+        "--format", "bestaudio/best", "--extract-audio",
         "--audio-format", "wav", "--output", str(directory / "source.%(ext)s"),
-        "--", url,
-    ], check=True, stdout=sys.stderr)
+        "--", youtube_url(url),
+    ]
+
+
+def youtube_audio(url: str, directory: Path) -> Path:
+    subprocess.run(youtube_command(url, directory), check=True, stdout=sys.stderr)
     result = directory / "source.wav"
     if not result.is_file():
         raise RuntimeError("yt-dlp completed without producing source.wav.")

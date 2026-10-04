@@ -13,6 +13,33 @@ let busy = false;
 let editing = null;
 let deleting = null;
 let browseParent = '';
+let youtubeJob = null;
+const lookupSelections = {import: null, edit: null};
+const lookupEpoch = {import: 0, edit: 0};
+const coverImages = new Map();
+
+async function coverImage(container, project) {
+  const key = JSON.stringify([state.root, project.id, project.cover]);
+  if (container.dataset.coverKey === key) return;
+  container.dataset.coverKey = key;
+  container.querySelector('img')?.remove(); container.classList.remove('has-cover');
+  if (!project.cover) return;
+  const root = state.root;
+  if (!coverImages.has(key)) {
+    coverImages.set(key, fetch(`${projectUrl(project.id)}/cover`, {headers: {'X-Master-Track-Token': token}})
+      .then(r => { if (!r.ok) throw new Error('Cover unavailable'); return r.blob(); })
+      .then(blob => URL.createObjectURL(blob)).catch(() => { coverImages.delete(key); return null; }));
+    if (coverImages.size > 64) {
+      const oldest = coverImages.keys().next().value;
+      coverImages.get(oldest).then(url => { if (url) URL.revokeObjectURL(url); }); coverImages.delete(oldest);
+    }
+  }
+  const url = await coverImages.get(key);
+  if (!url || root !== state.root || container.dataset.coverKey !== key) return;
+  const img = el('img'); img.alt = `${project.album || project.title} cover`; img.src = url;
+  img.onerror = () => { img.remove(); container.classList.remove('has-cover'); };
+  container.append(img); container.classList.add('has-cover');
+}
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -43,13 +70,16 @@ function renderLibrary() {
   $('root-label').textContent = state.root || 'No folder selected';
   $('root-label').title = state.root || '';
   $('import-open').disabled = !state.root || busy;
+  $('youtube-open').disabled = !state.root || busy;
+  $('youtube-open').textContent = state.job?.kind === 'youtube' && jobRunning() ? 'YouTube download…' : 'Import from YouTube';
   const list = $('library'); list.replaceChildren();
   const query = $('search').value.toLowerCase();
   const projects = state.projects.filter(p => `${p.title} ${p.artist} ${p.album}`.toLowerCase().includes(query));
   for (const project of projects) {
     const button = el('button', `project-button${project.id === selected ? ' active' : ''}`);
     button.setAttribute('aria-current', project.id === selected ? 'page' : 'false');
-    button.append(el('span', 'song-icon', project.stems.length ? '≋' : '♪'));
+    const icon = el('span', 'song-icon', project.stems.length ? '≋' : '♪');
+    button.append(icon); coverImage(icon, project);
     const label = el('span', 'project-label');
     label.append(el('strong', '', project.title), el('small', '', `${project.artist || 'Unknown artist'} · ${project.stems.length ? `${project.stems.length} stems` : 'Not separated'}`));
     button.append(label); button.onclick = () => selectProject(project.id);
@@ -64,6 +94,7 @@ function renderProject() {
   if (!project) { $('breadcrumb').textContent = 'Library'; return; }
   $('breadcrumb').textContent = project.title;
   $('title').textContent = project.title;
+  coverImage(document.querySelector('.record-art'), project);
   $('artist').textContent = project.artist || 'Unknown artist';
   $('album').textContent = [project.album, project.year].filter(Boolean).join(' · ');
   $('source-name').textContent = project.original || 'No original file';
@@ -76,6 +107,7 @@ function renderProject() {
     ? 'A successful rerun replaces this project’s existing stems.'
     : 'Choose your stems. We’ll take care of the separation.';
   renderJob();
+  document.querySelectorAll('[data-split-guitar]').forEach(button => { button.disabled = !!jobRunning(); });
   const signature = JSON.stringify([state.root, project.id, project.stems]);
   if (signature !== audioSignature) {
     audioSignature = signature;
@@ -88,7 +120,7 @@ function renderJob() {
   $('job-panel').hidden = !belongs;
   if (!belongs) return;
   const elapsed = time((job.finished || Date.now()/1000) - job.started);
-  const labels = {running: 'Separating your recording', cancelling: 'Stopping separation',
+  const labels = {running: job.guitar_split ? 'Splitting guitar into lead and rhythm' : 'Separating your recording', cancelling: 'Stopping separation',
     succeeded: 'Separation complete', failed: 'Separation failed', cancelled: 'Separation cancelled'};
   $('job-status').textContent = `${labels[job.status]} · ${elapsed}${job.error ? ` — ${job.error}` : ''}`;
   $('cancel').hidden = !jobRunning(); $('cancel').disabled = job.status === 'cancelling';
@@ -103,8 +135,51 @@ async function refresh() {
   if (state.root !== next.root) { selected = null; audioSignature = ''; clearAudio(); }
   state = next;
   if (selected && !activeProject()) { selected = null; clearAudio(); audioSignature = ''; }
-  renderLibrary(); renderProject();
+  renderLibrary(); renderProject(); renderYouTube();
 }
+function renderYouTube() {
+  const job = state.job;
+  const active = job?.kind === 'youtube' && jobRunning();
+  const ours = job?.kind === 'youtube' && job.id === youtubeJob;
+  $('youtube-submit').disabled = !!jobRunning();
+  $('youtube-cancel').hidden = !active;
+  $('youtube-cancel').disabled = job?.status === 'cancelling';
+  $('youtube-progress').hidden = !active;
+  for (const input of $('youtube-form').querySelectorAll('input')) input.disabled = !!active;
+  if (!ours) return;
+  $('youtube-status').textContent = {running:'Downloading and extracting audio…', cancelling:'Stopping download…', cancelled:'Download cancelled.', failed:'Download failed.', succeeded:'Project created.'}[job.status];
+  $('youtube-error').textContent = job.error || '';
+  $('youtube-details').hidden = false;
+  $('youtube-log').textContent = (job.logs || []).join('\n');
+  if (job.status === 'succeeded') {
+    youtubeJob = null; $('youtube-dialog').close(); selectProject(job.project);
+    notice('YouTube audio imported. Choose stems to separate, or use Edit details to find album artwork.');
+  }
+}
+$('youtube-open').onclick = () => {
+  if (!state.root) return openFolder();
+  if (state.job?.kind === 'youtube' && jobRunning()) youtubeJob = state.job.id;
+  else {
+    youtubeJob = null; $('youtube-form').reset();
+    $('youtube-status').textContent = ''; $('youtube-error').textContent = '';
+    $('youtube-details').hidden = true;
+  }
+  renderYouTube(); $('youtube-dialog').showModal();
+};
+$('youtube-form').onsubmit = async event => {
+  event.preventDefault();
+  if (jobRunning()) return;
+  $('youtube-submit').disabled = true; $('youtube-error').textContent = '';
+  try {
+    const data = fields('youtube');
+    const job = await api('/api/import-youtube', {...data, url:$('youtube-url').value.trim(), root:state.root});
+    youtubeJob = job.id; await refresh();
+  } catch (error) { $('youtube-error').textContent = error.message; $('youtube-submit').disabled = false; }
+};
+$('youtube-cancel').onclick = async () => {
+  try { await api('/api/cancel', {}); await refresh(); }
+  catch(error) { $('youtube-error').textContent = error.message; }
+};
 function selectProject(id) {
   if (selected === id) return;
   selected = id; notice(); renderLibrary(); renderProject();
@@ -175,6 +250,20 @@ function renderTracks() {
     const row = el('div', 'track'); row.style.setProperty('--track-color', colors[index % colors.length]);
     const label = el('div'); label.append(el('div', 'track-name', track.name[0].toUpperCase()+track.name.slice(1)),
       el('div', 'track-detail', `${track.buffer.numberOfChannels === 1 ? 'MONO' : 'STEREO'} · ${time(track.buffer.duration)}`));
+    if (track.file === 'guitar.wav') {
+      const split = el('button', 'split-guitar');
+      split.type = 'button'; split.title = 'Split into lead and rhythm';
+      split.setAttribute('aria-label', 'Split into lead and rhythm');
+      split.dataset.splitGuitar = ''; split.disabled = !!jobRunning();
+      split.innerHTML = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h5c4 0 3-7 7-7h4M9 12c4 0 3 7 7 7h4M17 2l3 3-3 3M17 16l3 3-3 3"/></svg>';
+      const projectId = selected;
+      split.onclick = async () => {
+        split.disabled = true;
+        try { await api(`${projectUrl(projectId)}/split-guitar`, {}); notice(); await refresh(); }
+        catch (error) { notice(error.message); split.disabled = !!jobRunning(); }
+      };
+      label.querySelector('.track-name').append(split);
+    }
     const wave = el('div', 'wave-wrap'); const canvas = el('canvas'); canvas.setAttribute('aria-hidden','true');
     wave.append(canvas, el('span', 'playhead'));
     const controls = el('div', 'track-controls');
@@ -230,11 +319,14 @@ function openFolder() {
 function openImport() {
   if (!state.root) return openFolder();
   $('import-form').reset(); $('file-label').textContent = 'Choose an audio file';
+  resetLookup('import');
   $('import-error').textContent = ''; $('upload-progress').hidden = true;
   $('import-dialog').showModal();
 }
 function fields(prefix) {
-  return Object.fromEntries(['title','artist','album','year'].map(key => [key,$(`${prefix}-${key}`).value]));
+  const data = Object.fromEntries(['title','artist','album','year'].map(key => [key,$(`${prefix}-${key}`).value]));
+  if (lookupSelections[prefix]) data.lookup_token = lookupSelections[prefix];
+  return data;
 }
 function upload(file, data) {
   return new Promise((resolve, reject) => {
@@ -266,6 +358,7 @@ $('folder-form').onsubmit = async e => {
   } catch(error) { $('folder-error').textContent=error.message; }
 };
 $('audio-file').onchange = () => {
+  resetLookup('import');
   const file = $('audio-file').files[0]; if (!file) return;
   $('file-label').textContent = file.name;
   if (!$('import-title').value) $('import-title').value = file.name.replace(/\.[^.]+$/, '').replaceAll('_', ' ');
@@ -282,6 +375,7 @@ $('import-form').onsubmit = async e => {
 };
 $('edit-open').onclick = () => {
   const p=activeProject(); if(!p)return; editing=p.id;
+  resetLookup('edit');
   for(const key of ['title','artist','album','year']) $(`edit-${key}`).value=p[key]||'';
   $('edit-error').textContent=''; $('edit-dialog').showModal();
 };
@@ -341,3 +435,79 @@ async function poll() {
   setTimeout(poll, 2000);
 }
 poll(); animate();
+
+function resetLookup(prefix) {
+  lookupEpoch[prefix]++;
+  lookupSelections[prefix] = null;
+  const panel = $(`${prefix}-lookup-results`);
+  if (panel) { panel.replaceChildren(); panel.hidden = true; }
+  const status = $(`${prefix}-lookup-status`);
+  if (status) status.textContent = '';
+  const button = $(`${prefix}-lookup`);
+  if (button) button.disabled = false;
+  $(`${prefix}-form`).querySelector('[type=submit]').disabled = false;
+}
+
+for (const prefix of ['import', 'edit']) {
+  const form = $(`${prefix}-form`);
+  const box = el('div', 'metadata-lookup');
+  const find = el('button', 'secondary', 'Find details'); find.type = 'button'; find.id = `${prefix}-lookup`;
+  const help = el('p', 'lookup-help', 'Search by song title, artist and album. Only this text is sent to MusicBrainz. Review a match before saving.');
+  const status = el('p', 'lookup-status'); status.id = `${prefix}-lookup-status`; status.setAttribute('role', 'status');
+  const results = el('div', 'lookup-results'); results.id = `${prefix}-lookup-results`; results.hidden = true;
+  box.append(find, help, status, results);
+  form.insertBefore(box, form.querySelector('[type=submit]'));
+  for (const key of ['title','artist','album']) $(`${prefix}-${key}`).addEventListener('input', () => resetLookup(prefix));
+  form.closest('dialog').addEventListener('close', () => resetLookup(prefix));
+  find.onclick = async () => {
+    resetLookup(prefix);
+    const epoch = ++lookupEpoch[prefix];
+    find.disabled = true; status.textContent = 'Searching MusicBrainz…';
+    try {
+      const data = await api('/api/metadata/search', fields(prefix));
+      if (epoch !== lookupEpoch[prefix]) return;
+      status.textContent = data.matches.length ? 'Choose a match to fill the fields. You can edit them before saving.' : 'No matches. Check the title and artist, or try removing the album.';
+      results.hidden = !data.matches.length;
+      for (const match of data.matches) {
+        const card = el('div', 'lookup-match');
+        card.append(el('strong', '', `${match.title} — ${match.artist}`));
+        card.append(el('p', '', [match.album, match.year, match.type, match.edition, match.recording_note].filter(Boolean).join(' · ')));
+        const source = el('a', 'lookup-source', 'MusicBrainz');
+        source.href = `https://musicbrainz.org/release/${encodeURIComponent(match.release_id)}`; source.target = '_blank'; source.rel = 'noopener noreferrer';
+        const choose = el('button', 'text-button', 'Use this match'); choose.type = 'button';
+        choose.onclick = async () => {
+          const selectionEpoch = ++lookupEpoch[prefix];
+          results.querySelectorAll('button').forEach(b => b.disabled = true);
+          find.disabled = true; form.querySelector('[type=submit]').disabled = true;
+          status.textContent = 'Fetching album cover…';
+          try {
+            const prepared = await api('/api/metadata/prepare', {token: match.token});
+            if (selectionEpoch !== lookupEpoch[prefix]) return;
+            for (const key of ['title','artist','album','year']) if (prepared.fields[key]) $(`${prefix}-${key}`).value = prepared.fields[key];
+            lookupSelections[prefix] = prepared.token;
+            results.replaceChildren(); results.hidden = false;
+            results.append(el('p', '', `${match.album} selected. Save to keep these details${prepared.has_cover ? ' and cover' : ''}.`));
+            if (prepared.has_cover) {
+              const response = await fetch(`/api/metadata/cover/${prepared.token}`, {headers: {'X-Master-Track-Token': token}});
+              if (!response.ok) throw new Error('Cover preview unavailable. You can still save the selected details.');
+              const url = URL.createObjectURL(await response.blob());
+              if (selectionEpoch !== lookupEpoch[prefix]) { URL.revokeObjectURL(url); return; }
+              const img = el('img', 'lookup-cover'); img.alt = `${match.album} cover`;
+              img.onload = img.onerror = () => URL.revokeObjectURL(url); img.src = url; results.prepend(img);
+            }
+            status.textContent = prepared.warning || 'Details ready to save.';
+          } catch (error) {
+            if (selectionEpoch === lookupEpoch[prefix]) status.textContent = error.message;
+          } finally {
+            if (selectionEpoch === lookupEpoch[prefix]) {
+              find.disabled = false; form.querySelector('[type=submit]').disabled = false;
+              results.querySelectorAll('button').forEach(b => b.disabled = false);
+            }
+          }
+        };
+        card.append(source, choose); results.append(card);
+      }
+    } catch (error) { if (epoch === lookupEpoch[prefix]) status.textContent = error.message; }
+    finally { if (epoch === lookupEpoch[prefix]) find.disabled = false; }
+  };
+}

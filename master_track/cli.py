@@ -6,8 +6,6 @@ import sys
 from pathlib import Path
 
 from .pipeline import DEFAULT_MODEL, STEM_CHOICES, separate, train
-from .sources import spotify_metadata
-from .guitars import GuitarOptions
 
 
 def parser() -> argparse.ArgumentParser:
@@ -21,16 +19,12 @@ def parser() -> argparse.ArgumentParser:
                        help="Destination folder (created if needed). Default: input folder/filename without extension; YouTube: stems/track-<id>.")
     split.add_argument("--model", help=f"Override automatic model selection (default: {DEFAULT_MODEL})")
     split.add_argument("--stems", nargs="+", choices=STEM_CHOICES,
-                       help="Stems to save; other includes unselected parts; lead/rhythm enable a second SAM Audio stage. Default: all six Demucs stems.")
-    split.add_argument("--lead-prompt", help="Description of the lead part to extract")
-    split.add_argument("--lead-span", nargs=2, type=float, metavar=("START", "END"),
-                       help="Seconds where lead is audible; guides overlapping SAM chunks")
-    split.add_argument("--sam-model", help="Hugging Face model ID or local checkpoint directory")
-    split.add_argument("--sam-device", choices=("auto", "cpu", "cuda", "mps"))
-    split.add_argument("--sam-chunk-seconds", type=float, help="SAM chunk length (default: 20, minimum: 2)")
+                       help="Stems to save; other includes unselected parts. Default: all six Demucs stems.")
     split.add_argument("--cache", type=Path, default=Path(".master-track/models"))
-    metadata = commands.add_parser("spotify", help="Fetch Spotify track metadata (no audio)")
-    metadata.add_argument("track", help="Track ID, URI, or URL")
+    guitar = commands.add_parser("split-guitar", help="Split an existing guitar stem into lead and rhythm")
+    guitar.add_argument("--file", type=Path, required=True)
+    guitar.add_argument("--output", type=Path, required=True)
+    guitar.add_argument("--cache", type=Path, default=Path(".master-track/models"))
     training = commands.add_parser("train", help="Fine-tuning boundary (not implemented)")
     training.add_argument("dataset", type=Path)
     ui = commands.add_parser("ui", help="Open a local project library and stem player in your browser")
@@ -43,8 +37,9 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
-        if args.command == "spotify":
-            result = spotify_metadata(args.track)
+        if args.command == "split-guitar":
+            from .guitar_split import split_guitar
+            result = [str(path) for path in split_guitar(args.file, args.output, args.cache)]
         elif args.command == "train":
             train(args.dataset)
             return 0
@@ -53,15 +48,9 @@ def main(argv: list[str] | None = None) -> int:
             serve(args.projects, args.port, args.cache)
             return 0
         else:
-            options = {key: value for key, value in {
-                "prompt": args.lead_prompt, "span": tuple(args.lead_span) if args.lead_span else None,
-                "model": args.sam_model, "device": args.sam_device,
-                "chunk_seconds": args.sam_chunk_seconds,
-            }.items() if value is not None}
             result = [str(path) for path in separate(
                 str(args.file) if args.file else args.youtube,
                 args.output, args.model, args.cache, youtube=bool(args.youtube), stems=args.stems,
-                guitar_options=GuitarOptions(**options) if options else None,
             )]
         print(json.dumps(result, indent=2))
         return 0

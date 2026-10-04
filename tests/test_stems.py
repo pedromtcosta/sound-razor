@@ -23,11 +23,10 @@ class StemSelectionTests(unittest.TestCase):
     def test_custom_model_without_filter_is_preserved(self):
         self.assertEqual(select_model("custom.onnx", None), ("custom.onnx", None))
 
-    def test_guitar_roles_require_guitar_capable_first_stage(self):
-        for roles in (["lead"], ["rhythm"], ["lead", "rhythm", "bass", "vocals", "drums"]):
-            self.assertEqual(select_model(None, roles), (DEFAULT_MODEL, tuple(roles)))
+    def test_removed_guitar_roles_are_rejected(self):
+        for role in ("lead", "rhythm"):
             with self.assertRaises(ValueError):
-                select_model("htdemucs.yaml", roles)
+                select_model(None, [role])
 
 
 if __name__ == "__main__":

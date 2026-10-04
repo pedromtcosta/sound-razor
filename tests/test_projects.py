@@ -20,6 +20,35 @@ def wav_bytes():
 
 
 class ProjectTests(unittest.TestCase):
+    def test_lead_rhythm_split_preserves_but_hides_combined_guitar(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            stems = folder / 'stems'
+            stems.mkdir()
+            for name in ('guitar', 'lead', 'rhythm', 'bass'):
+                (stems / f'{name}.wav').write_bytes(wav_bytes())
+            (stems/'separation.json').write_text(json.dumps({'lead_rhythm_split': {'overlap': .5}}))
+            self.assertEqual({s['file'] for s in describe_project(folder)['stems']},
+                             {'lead.wav', 'rhythm.wav', 'bass.wav'})
+            self.assertTrue((stems/'guitar.wav').exists())
+            (stems/'rhythm.wav').unlink()
+            self.assertIn('guitar.wav', {s['file'] for s in describe_project(folder)['stems']})
+
+    def test_custom_guitar_titles_are_labels_not_paths(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            (project / "original.wav").write_bytes(wav_bytes())
+            stems = project / "stems"
+            stems.mkdir()
+            for name in ("guitar-target", "guitar-remainder", "bass"):
+                (stems / f"{name}.wav").write_bytes(wav_bytes())
+            title = "Solo / <guitar>"
+            (stems / "separation.json").write_text(json.dumps({"guitar_split": {"title": title, "prompt": "guitar"}}))
+            result = describe_project(project)
+            self.assertEqual({stem["file"]: stem["name"] for stem in result["stems"]},
+                             {"guitar-target.wav": title, "guitar-remainder.wav": "Guitar remainder", "bass.wav": "bass"})
+            self.assertEqual(result["separation"]["guitar_split"][0]["prompt"], "guitar")
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

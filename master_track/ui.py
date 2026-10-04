@@ -16,9 +16,13 @@ import threading
 import time
 from urllib.parse import parse_qs, unquote, urlsplit
 import uuid
+import importlib.util
 
 from .projects import (atomic_json, describe_project, import_project, list_projects,
-                       project_path, save_metadata)
+                       project_path, save_metadata, cover_path)
+from .metadata_lookup import MetadataLookup
+from .sources import youtube_url, youtube_command
+from .projects import metadata_fields
 
 CUSTOM_STEMS = ("vocals", "guitar", "bass", "drums", "piano", "other")
 
@@ -48,6 +52,7 @@ class Library:
         self.process = None
         self.worker = None
         self.logs = deque(maxlen=160)
+        self.lookup = MetadataLookup()
         if root is not None:
             self.set_root(str(root), create=True)
         elif self.config.exists():
@@ -66,7 +71,7 @@ class Library:
             raise ValueError("Choose a projects folder.")
         with self.lock:
             if self.running() or self.worker is not None and self.worker.is_alive():
-                raise ValueError("Wait for separation to finish or cancel it before changing folders.")
+                raise ValueError("Wait for the current job to finish or cancel it before changing folders.")
             root = Path(value).expanduser().resolve()
             if create:
                 root.mkdir(parents=True, exist_ok=True)
@@ -92,31 +97,104 @@ class Library:
             return {"root": str(self.root) if self.root else None,
                     "projects": list_projects(self.root) if self.root else [], "job": job}
 
-    def start(self, identifier: str, preset: str, stems=None):
+    def start(self, identifier: str, preset: str, stems=None, *, guitar_split=False):
         with self.lock:
             if self.running() or self.worker is not None and self.worker.is_alive():
-                raise ValueError("Another separation is already running.")
-            chosen = selection_stems(preset, stems)
+                raise ValueError("Another download or separation is already running.")
+            chosen = ['lead', 'rhythm'] if guitar_split else selection_stems(preset, stems)
             project = project_path(self.require_root(), identifier)
             info = describe_project(project)
-            if not info["original"]:
+            if not guitar_split and not info["original"]:
                 raise ValueError("This project needs an unambiguous original audio file.")
             if (project / "stems").is_symlink():
                 raise ValueError("The stems folder must not be a symlink.")
+            if guitar_split:
+                if 'guitar.wav' not in {item['file'] for item in info['stems']}:
+                    raise ValueError('Separate the guitar track first.')
+                if any(p.is_symlink() or not p.is_file() for p in (project/'stems').iterdir()):
+                    raise ValueError('The stems folder must contain regular files only.')
+                if any((project/'stems'/name).exists() for name in ('lead.wav', 'rhythm.wav')):
+                    raise ValueError('This project already contains lead or rhythm tracks.')
             self.logs.clear()
             self.job = {"id": uuid.uuid4().hex, "project": identifier, "status": "running",
                         "started": time.time(), "finished": None, "error": None,
-                        "preset": preset, "stems": chosen}
-            self.worker = threading.Thread(target=self._separate, args=(project, info["original"], chosen), daemon=True)
+                        "preset": preset, "stems": chosen, "guitar_split": guitar_split}
+            self.worker = threading.Thread(target=self._separate, args=(project, info["original"], chosen, guitar_split), daemon=True)
             self.worker.start()
             return dict(self.job)
 
-    def _separate(self, project: Path, original: str, stems: list[str]):
+    def import_youtube(self, data):
+        url = youtube_url(data.get('url'))
+        fields = metadata_fields(data)
+        with self.lock:
+            root = self.require_root()
+            if data.get('root') != str(root):
+                raise ValueError('The projects folder changed. Reopen YouTube import.')
+            if self.running() or self.worker is not None and self.worker.is_alive():
+                raise ValueError('Another download or separation is already running.')
+            if importlib.util.find_spec('yt_dlp') is None:
+                raise ValueError('Install YouTube support: uv pip install --python .venv/bin/python -e ".[youtube]"')
+            if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
+                raise ValueError('Install FFmpeg and ffprobe on PATH.')
+            self.logs.clear()
+            self.job = {'id': uuid.uuid4().hex, 'kind': 'youtube', 'project': None,
+                        'status': 'running', 'started': time.time(), 'finished': None, 'error': None}
+            self.worker = threading.Thread(target=self._youtube, args=(root, url, fields), daemon=True)
+            self.worker.start()
+            return dict(self.job)
+
+    def _youtube(self, root, url, fields):
+        try:
+            with tempfile.TemporaryDirectory(prefix='.youtube-', dir=root) as temporary:
+                work = Path(temporary)
+                with self.lock:
+                    if self.job['status'] == 'cancelling':
+                        return
+                    self.process = subprocess.Popen(youtube_command(url, work), stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT, text=True, errors='replace',
+                        env=dict(os.environ, PYTHONUNBUFFERED='1'), start_new_session=True)
+                    process = self.process
+                for line in process.stdout:
+                    with self.lock:
+                        self.logs.append(line.rstrip()[-2000:])
+                code = process.wait()
+                process.stdout.close()
+                with self.lock:
+                    if self.job['status'] == 'cancelling':
+                        return
+                    if code:
+                        raise ValueError(f'YouTube download failed (exit {code}). See the download log.')
+                    info = json.loads((work/'source.info.json').read_text())
+                    defaults = {'title': info.get('track') or info.get('title') or 'YouTube recording',
+                                'artist': info.get('artist') or info.get('creator') or '',
+                                'album': info.get('album') or '',
+                                'year': str(info.get('release_year') or info.get('release_date') or '')[:4]}
+                    chosen = {key: fields[key] or str(defaults[key])[:500] for key in defaults}
+                    result = import_project(root, work/'source.wav', 'original.wav', chosen,
+                                            origin={'provider': 'YouTube', 'url': url})
+                    self.job.update(status='succeeded', project=result['id'])
+        except Exception as error:
+            with self.lock:
+                if self.job['status'] != 'cancelling':
+                    self.job.update(status='failed', error=str(error))
+        finally:
+            with self.lock:
+                if self.job['status'] == 'cancelling':
+                    self.job['status'] = 'cancelled'
+                self.job['finished'] = time.time()
+                self.process = None
+
+    def _separate(self, project: Path, original: str, stems: list[str], guitar_split=False):
         try:
             with tempfile.TemporaryDirectory(prefix=".separation-", dir=project) as temporary:
                 stage = Path(temporary) / "stems"
-                command = [sys.executable, "-m", "master_track", "separate", "--file", str(project / original),
-                           "--output", str(stage), "--cache", str(self.cache), "--stems", *stems]
+                if guitar_split:
+                    shutil.copytree(project/'stems', stage)
+                    command = [sys.executable, '-m', 'master_track', 'split-guitar',
+                               '--file', str(stage/'guitar.wav'), '--output', str(stage), '--cache', str(self.cache)]
+                else:
+                    command = [sys.executable, "-m", "master_track", "separate", "--file", str(project / original),
+                               "--output", str(stage), "--cache", str(self.cache), "--stems", *stems]
                 env = dict(os.environ, PYTHONUNBUFFERED="1", ORT_DISABLE_TELEMETRY="1")
                 with self.lock:
                     if self.job["status"] == "cancelling":
@@ -221,7 +299,7 @@ def make_server(library: Library, port: int = 8765):
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'")
+            self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'")
             self.end_headers()
             self.wfile.write(body)
 
@@ -279,6 +357,18 @@ def make_server(library: Library, port: int = 8765):
                 self.respond(500, {"error": "Unexpected server error; see the terminal."})
 
         def api(self, method, path, query):
+            if method == 'POST' and path == '/api/import-youtube':
+                return library.import_youtube(self.json_body())
+            if method == 'POST' and path == '/api/metadata/search':
+                return {'matches': library.lookup.search(self.json_body())}
+            if method == 'POST' and path == '/api/metadata/prepare':
+                return library.lookup.prepare(self.json_body().get('token'))
+            if method == 'GET' and path.startswith('/api/metadata/cover/'):
+                item = library.lookup.get(path.rsplit('/', 1)[-1])
+                if not item.get('cover'):
+                    raise ValueError('Cover not found.')
+                self.respond(200, item['cover'], item['cover_type'])
+                return None
             if method == "GET" and path == "/api/state":
                 return library.state()
             if method == "GET" and path == "/api/folders":
@@ -308,7 +398,8 @@ def make_server(library: Library, port: int = 8765):
                     with library.lock:
                         if query.get("root") and query["root"] != str(library.require_root()):
                             raise ValueError("The projects folder changed during upload. Please import again.")
-                        return import_project(library.require_root(), upload, query.get("filename", ""), query)
+                        enrichment = library.lookup.get(query['lookup_token']) if query.get('lookup_token') else None
+                        return import_project(library.require_root(), upload, query.get("filename", ""), query, enrichment)
             if method == "POST" and path == "/api/cancel":
                 library.cancel()
                 return {"ok": True}
@@ -317,10 +408,21 @@ def make_server(library: Library, port: int = 8765):
                 with library.lock:
                     project = project_path(library.require_root(), parts[2])
                     if method == "POST" and len(parts) == 4 and parts[3] == "metadata":
-                        return save_metadata(project, self.json_body())
+                        data = self.json_body()
+                        enrichment = library.lookup.get(data['lookup_token']) if data.get('lookup_token') else None
+                        return save_metadata(project, data, enrichment)
+                    if method == 'GET' and len(parts) == 4 and parts[3] == 'cover':
+                        cover = cover_path(project)
+                        if not cover:
+                            raise ValueError('Cover not found.')
+                        self.respond(200, cover.read_bytes(), 'image/png' if cover.suffix == '.png' else 'image/jpeg')
+                        return None
                     if method == "POST" and len(parts) == 4 and parts[3] == "separate":
                         data = self.json_body()
                         return library.start(parts[2], data.get("preset", "vocals"), data.get("stems"))
+                    if method == "POST" and len(parts) == 4 and parts[3] == "split-guitar":
+                        self.json_body()
+                        return library.start(parts[2], 'guitar', guitar_split=True)
                     if method == "POST" and len(parts) == 4 and parts[3] == "delete":
                         return library.delete(parts[2], self.json_body().get("root"))
                     if method == "GET" and len(parts) == 5 and parts[3] == "audio":

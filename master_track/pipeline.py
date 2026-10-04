@@ -3,6 +3,7 @@
 import contextlib
 import importlib.util
 import logging
+import json
 import os
 import shutil
 import subprocess
@@ -11,7 +12,6 @@ import tempfile
 from pathlib import Path
 
 from .sources import youtube_audio
-from .guitars import GUITAR_ROLES, GuitarOptions, preflight, split_guitars
 
 DEFAULT_MODEL = "htdemucs_6s.yaml"
 VOCAL_MODEL = "UVR_MDXNET_KARA_2.onnx"
@@ -20,7 +20,7 @@ MODEL_STEMS = {
     "htdemucs.yaml": ("vocals", "drums", "bass", "other"),
     DEFAULT_MODEL: ("vocals", "drums", "bass", "guitar", "piano", "other"),
 }
-STEM_CHOICES = ("vocals", "drums", "bass", "guitar", "lead", "rhythm", "piano", "other", "instrumental")
+STEM_CHOICES = ("vocals", "drums", "bass", "guitar", "piano", "other", "instrumental")
 
 
 def select_model(model: str | None, stems: list[str] | None) -> tuple[str, tuple[str, ...] | None]:
@@ -29,7 +29,7 @@ def select_model(model: str | None, stems: list[str] | None) -> tuple[str, tuple
         if not requested or set(requested) - set(STEM_CHOICES):
             raise ValueError("Choose stems from: " + ", ".join(STEM_CHOICES))
     if model is None:
-        if requested is None or set(requested) & {"guitar", "piano", *GUITAR_ROLES}:
+        if requested is None or set(requested) & {"guitar", "piano"}:
             model = DEFAULT_MODEL
         elif set(requested) <= {"vocals", "instrumental"}:
             model = VOCAL_MODEL
@@ -39,9 +39,7 @@ def select_model(model: str | None, stems: list[str] | None) -> tuple[str, tuple
     if requested is not None:
         if supported is None:
             raise ValueError("--stems requires a known model: " + ", ".join(MODEL_STEMS))
-        required = set(requested) - GUITAR_ROLES
-        if set(requested) & GUITAR_ROLES:
-            required.add("guitar")
+        required = set(requested)
         missing = required - set(supported)
         if missing:
             raise ValueError(f"{model} cannot output {', '.join(sorted(missing))}; "
@@ -51,13 +49,10 @@ def select_model(model: str | None, stems: list[str] | None) -> tuple[str, tuple
 
 def combine_other(by_stem: dict[str, Path], model_stems: tuple[str, ...],
                   selected: tuple[str, ...]) -> None:
-    """Fold unselected outputs into Other without duplicating the guitar stage."""
+    """Fold unselected model outputs into Other."""
     if "other" not in selected:
         return
     available = set(model_stems)
-    if set(selected) & GUITAR_ROLES and "guitar" not in selected:
-        available.remove("guitar")
-        available.update(GUITAR_ROLES)
     names = ["other", *sorted(available - set(selected))]
     missing = set(names) - by_stem.keys()
     if missing:
@@ -104,15 +99,8 @@ def output_directory(source: str, output: Path | None, youtube: bool = False) ->
 
 def separate(source: str, output: Path | None = None, model: str | None = None,
              cache: Path = Path(".master-track/models"), youtube: bool = False,
-             stems: list[str] | None = None,
-             guitar_options: GuitarOptions | None = None) -> list[Path]:
+             stems: list[str] | None = None) -> list[Path]:
     model, selected_stems = select_model(model, stems)
-    split_roles = bool(set(selected_stems or ()) & GUITAR_ROLES)
-    if guitar_options is not None and not split_roles:
-        raise ValueError("SAM options require --stems containing lead or rhythm.")
-    if split_roles:
-        guitar_options = guitar_options or GuitarOptions()
-        preflight(guitar_options)
     if not youtube and not Path(source).expanduser().is_file():
         raise ValueError(f"Audio file does not exist: {source}")
     if not shutil.which("ffmpeg"):
@@ -123,20 +111,12 @@ def separate(source: str, output: Path | None = None, model: str | None = None,
         raise RuntimeError('Install YouTube support: pip install -e ".[youtube]"')
     output = output_directory(source, output, youtube)
     cache = cache.expanduser().resolve()
-    if split_roles:
-        # Hugging Face reads this at import time; set it before stage one can
-        # transitively import any Hugging Face modules.
-        os.environ.setdefault("HF_HOME", str(cache / "huggingface"))
     cache.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="master-track-") as temporary:
         work = Path(temporary)
         audio = youtube_audio(source, work) if youtube else Path(source).expanduser().resolve()
         normalized = work / "input.wav"
         normalize(audio, normalized)
-        if split_roles:
-            import wave
-            with wave.open(str(normalized)) as wav:
-                guitar_options.validate(wav.getnframes() / wav.getframerate())
         # Upstream progress/prints must not corrupt the JSON result on stdout.
         with contextlib.redirect_stdout(sys.stderr):
             # ORT 1.30's native telemetry uploader can crash during shutdown on
@@ -158,18 +138,12 @@ def separate(source: str, output: Path | None = None, model: str | None = None,
                   f"{', '.join(selected_stems) if selected_stems else 'all model outputs'}", file=sys.stderr)
             names = {stem: stem for stem in MODEL_STEMS.get(model, ())}
             results = separator.separate(str(normalized), custom_output_names=names or None)
-            # Release first-stage model references before loading the larger SAM model.
             del separator
         paths = [Path(name) if Path(name).is_absolute() else work / name for name in results]
         if len(paths) < 2 or any(not path.is_file() or path.stat().st_size <= 44 for path in paths):
             raise RuntimeError("Separator did not produce valid stem files.")
         if selected_stems is not None:
             by_stem = {path.stem: path for path in paths}
-            if split_roles:
-                if "guitar" not in by_stem:
-                    raise RuntimeError("First-stage model did not produce a guitar stem for SAM.")
-                with contextlib.redirect_stdout(sys.stderr):
-                    by_stem.update(split_guitars(by_stem["guitar"], work, cache, guitar_options))
             missing = set(selected_stems) - set(by_stem)
             if missing:
                 raise RuntimeError(f"Model did not produce requested stems: {', '.join(sorted(missing))}")
@@ -179,8 +153,11 @@ def separate(source: str, output: Path | None = None, model: str | None = None,
         destinations = [output / path.name for path in paths]
         if any(path.is_dir() for path in destinations):
             raise ValueError("An output filename conflicts with an existing directory.")
-        return [Path(shutil.move(str(path), str(destination))).resolve()
+        result = [Path(shutil.move(str(path), str(destination))).resolve()
                 for path, destination in zip(paths, destinations)]
+        settings = output / "separation.json"
+        settings.write_text(json.dumps({"stems": selected_stems}, indent=2) + "\n")
+        return result
 
 
 def train(dataset: Path) -> None:

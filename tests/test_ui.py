@@ -86,6 +86,23 @@ class UITests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIsNone(self.library.job)
 
+    def test_selected_metadata_and_cover_survive_import_and_edit(self):
+        import base64
+        cover = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aT1sAAAAASUVORK5CYII=')
+        token = self.library.lookup.remember({'prepared': True, 'cover': cover, 'cover_type': 'image/png', 'release_id': 'release'})
+        query = urlencode({'filename': 'Song.wav', 'title': 'Song', 'album': 'Album', 'lookup_token': token})
+        status, body = self.request('POST', '/api/import?' + query, wav_bytes())
+        self.assertEqual(status, 200, body)
+        project = json.loads(body)
+        route = '/api/projects/' + quote(project['id'])
+        self.assertTrue(project['cover'])
+        self.assertEqual(self.request('GET', route+'/cover', authorized=False)[0], 403)
+        self.assertEqual(self.request('GET', route+'/cover'), (200, cover))
+        self.assertEqual(self.request('POST', route+'/metadata', {'title': 'Renamed'})[0], 200)
+        self.assertEqual(self.request('GET', route+'/cover'), (200, cover))
+        self.assertEqual(self.request('POST', '/api/metadata/prepare', {'token': 'missing'})[0], 400)
+        self.assertEqual(self.request('POST', '/api/metadata/search', {'title': ''})[0], 400)
+
     def test_custom_selection_validation(self):
         self.assertEqual(selection_stems("vocals"), ["vocals", "instrumental"])
         self.assertEqual(selection_stems("custom", ["guitar", "bass", "guitar"]), ["guitar", "bass"])
@@ -98,6 +115,22 @@ class UITests(unittest.TestCase):
         status, _ = self.request("POST", "/api/projects/Song/separate", {"preset": "custom", "stems": []})
         self.assertEqual(status, 400)
         self.assertIsNone(self.library.job)
+
+    def test_youtube_import_auth_validation_and_cancellation(self):
+        import importlib.util
+        data = {'url': 'https://youtu.be/BaW_jenozKc', 'root': str(self.library.root)}
+        self.assertEqual(self.request('POST', '/api/import-youtube', data, authorized=False)[0], 403)
+        self.assertEqual(self.request('POST', '/api/import-youtube', {'url': 'file:///tmp/input'})[0], 400)
+        if importlib.util.find_spec('yt_dlp') is None:
+            self.skipTest('yt-dlp optional dependency is not installed')
+        status, body = self.request('POST', '/api/import-youtube', data)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(self.request('POST', '/api/import-youtube', data)[0], 400)
+        self.library.cancel()
+        self.library.worker.join(timeout=10)
+        self.assertFalse(self.library.worker.is_alive())
+        self.assertEqual(self.library.job['status'], 'cancelled')
+        self.assertEqual(list(self.library.root.iterdir()), [])
 
     def test_delete_project_requires_matching_root_and_preserves_neighbors(self):
         folder = self.library.root / "Song"
@@ -132,6 +165,34 @@ class UITests(unittest.TestCase):
         self.assertEqual(self.library.job["status"], "failed")
         self.assertEqual((stems / "vocals.wav").read_bytes(), previous)
         self.assertTrue(self.library.logs)
+
+    def test_guitar_split_validation_and_failure_preserve_stems(self):
+        folder = self.library.root / 'Guitars'
+        folder.mkdir()
+        stems = folder/'stems'
+        stems.mkdir()
+        route = '/api/projects/Guitars/split-guitar'
+        self.assertEqual(self.request('POST', route, {})[0], 400)
+        (stems/'guitar.wav').write_bytes(wav_bytes())  # Unsupported sample rate; real CLI must fail.
+        (stems/'bass.wav').write_bytes(wav_bytes())
+        before = {p.name: p.read_bytes() for p in stems.iterdir()}
+        self.assertEqual(self.request('POST', route, {}, authorized=False)[0], 403)
+        self.assertEqual(self.request('POST', route, {})[0], 200)
+        self.library.worker.join(timeout=30)
+        self.assertFalse(self.library.worker.is_alive())
+        self.assertEqual(self.library.job['status'], 'failed')
+        self.assertEqual({p.name: p.read_bytes() for p in stems.iterdir()}, before)
+
+    def test_guitar_split_rejects_linked_files(self):
+        folder = self.library.root/'Guitars'
+        stems = folder/'stems'
+        stems.mkdir(parents=True)
+        (stems/'guitar.wav').write_bytes(wav_bytes())
+        outside = self.directory/'outside.json'
+        outside.write_text('{}')
+        (stems/'separation.json').symlink_to(outside)
+        self.assertEqual(self.request('POST', '/api/projects/Guitars/split-guitar', {})[0], 400)
+        self.assertIsNone(self.library.job)
 
     def test_cancelled_cli_run_preserves_previous_stems(self):
         folder = self.library.root / "Cancel audio"

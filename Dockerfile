@@ -25,16 +25,6 @@ RUN python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
     && python -m pip install '.[separation,youtube]' \
     && python -m pip check
 
-# Opt in to the substantially larger, Git-sourced SAM dependency stack.
-ARG INSTALL_GUITARS=false
-RUN if [ "$INSTALL_GUITARS" = "true" ]; then \
-        apt-get update \
-        && apt-get install -y --no-install-recommends git \
-        && rm -rf /var/lib/apt/lists/* \
-        && python -m pip install '.[guitars]' \
-        && python -m pip check; \
-    fi
-
 RUN groupadd --gid 1000 app \
     && useradd --uid 1000 --gid app --create-home app \
     && mkdir -p /work/input /work/stems /work/.master-track \

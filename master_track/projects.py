@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import hashlib
 
 AUDIO_EXTENSIONS = {".wav", ".flac", ".mp3", ".opus", ".ogg", ".m4a", ".aac", ".aiff", ".aif"}
 METADATA_FIELDS = ("title", "artist", "album", "year")
@@ -83,15 +84,45 @@ def describe_project(path: Path) -> dict:
         warnings.append("No unambiguous original recording in this project.")
     stems_dir = path / "stems"
     stems = []
+    separation = {}
+    settings = stems_dir / "separation.json"
+    if not stems_dir.is_symlink() and settings.is_file() and not settings.is_symlink():
+        try:
+            if settings.stat().st_size > 1000000:
+                raise ValueError("Separation settings are too large.")
+            separation = json.loads(settings.read_text())
+            if not isinstance(separation, dict):
+                raise ValueError("Invalid separation settings.")
+            saved = separation.get("guitar_split") or []
+            saved = [saved] if isinstance(saved, dict) else saved
+            if not isinstance(saved, list) or any(not isinstance(item, dict) or not isinstance(item.get("title"), str) for item in saved):
+                raise ValueError("Invalid saved track labels.")
+            separation["guitar_split"] = saved
+        except (ValueError, OSError):
+            separation = {}
+            warnings.append("Could not read separation settings.")
+    split = separation.get("guitar_split")
+    labels = {f"guitar-target-{i}": item["title"] for i, item in enumerate(split or [], 1)}
+    if split:
+        labels.update({"guitar-target": split[0]["title"], "guitar-remainder": "Guitar remainder"})
     if stems_dir.is_dir() and not stems_dir.is_symlink():
         order = {name: i for i, name in enumerate(("vocals", "guitar", "bass", "drums", "piano", "other", "instrumental", "lead", "rhythm"))}
+        order.update({f"guitar-target-{i}": 1 + i / (len(split) + 2) for i in range(1, len(split or []) + 1)})
+        order["guitar-remainder"] = 1.99
         for p in sorted(stems_dir.iterdir(), key=lambda p: (order.get(p.stem, 99), p.name)):
+            if (p.name == 'guitar.wav' and separation.get('lead_rhythm_split')
+                    and all((stems_dir / name).is_file() and not (stems_dir / name).is_symlink()
+                            for name in ('lead.wav', 'rhythm.wav'))):
+                continue
             if p.is_file() and not p.is_symlink() and p.suffix.lower() == ".wav":
-                stems.append({"name": p.stem, "file": p.name, "bytes": p.stat().st_size,
+                if p.name == "guitar.wav" and split and (stems_dir / "guitar-target-1.wav").is_file():
+                    continue  # Retain the unsplit source on disk without doubling playback.
+                stems.append({"name": labels.get(p.stem, p.stem), "file": p.name, "bytes": p.stat().st_size,
                               "version": p.stat().st_mtime_ns})
-    return {"id": path.name, **fields,
+    cover = cover_path(path, data)
+    return {"id": path.name, **fields, "cover": cover.name if cover else None,
             "title": fields["title"] or (Path(original).stem if original else path.name),
-            "original": original, "stems": stems, "warnings": warnings}
+            "original": original, "stems": stems, "separation": separation, "warnings": warnings}
 
 
 def list_projects(root: Path) -> list[dict]:
@@ -113,7 +144,7 @@ def probe_audio(path: Path) -> None:
         raise ValueError("The imported file does not contain a readable audio stream.")
 
 
-def import_project(root: Path, source: Path, filename: str, fields: dict) -> dict:
+def import_project(root: Path, source: Path, filename: str, fields: dict, enrichment=None, origin=None) -> dict:
     if Path(filename).name != filename or "\\" in filename or filename.startswith("."):
         raise ValueError("Invalid audio filename.")
     if Path(filename).suffix.lower() not in AUDIO_EXTENSIONS:
@@ -126,8 +157,11 @@ def import_project(root: Path, source: Path, filename: str, fields: dict) -> dic
     with tempfile.TemporaryDirectory(prefix=".import-", dir=root) as temporary:
         work = Path(temporary)
         shutil.copy2(source, work / filename)
-        atomic_json(work / "metadata.json", {"schema_version": 1, **fields,
-                                             "title": title, "original_file": filename})
+        metadata = {"schema_version": 1, **fields, "title": title, "original_file": filename}
+        if origin:
+            metadata['source'] = origin
+        apply_enrichment(work, metadata, enrichment)
+        atomic_json(work / "metadata.json", metadata)
         # Reserve a destination without overwriting an existing project.
         index = 1
         while True:
@@ -146,8 +180,49 @@ def import_project(root: Path, source: Path, filename: str, fields: dict) -> dic
     return describe_project(destination)
 
 
-def save_metadata(project: Path, fields: dict) -> dict:
+def cover_path(project: Path, metadata=None):
+    data = read_metadata(project) if metadata is None else metadata
+    name = data.get('cover_file')
+    if not isinstance(name, str) or Path(name).name != name or '\\' in name:
+        return None
+    path = project / name
+    if path.suffix.lower() not in {'.jpg', '.png'} or path.is_symlink() or not path.is_file():
+        return None
+    return path if path.stat().st_size <= 5_000_000 else None
+
+
+def apply_enrichment(project, data, enrichment):
+    if enrichment is None:
+        return
+    if not enrichment.get('prepared'):
+        raise ValueError('Select a metadata match before saving.')
+    data['metadata_source'] = {key: enrichment.get(key) for key in ('release_id', 'group_id', 'recording_id')}
+    data['metadata_source']['provider'] = 'MusicBrainz'
+    data.pop('cover_file', None)
+    cover = enrichment.get('cover')
+    if cover:
+        extension = '.png' if enrichment['cover_type'] == 'image/png' else '.jpg'
+        name = 'cover-' + hashlib.sha256(cover).hexdigest()[:20] + extension
+        destination = project/name
+        if destination.is_symlink():
+            raise ValueError('Cover symlinks are not supported.')
+        with tempfile.NamedTemporaryFile(dir=project, prefix='.cover-', delete=False) as stream:
+            temporary = Path(stream.name)
+            try:
+                stream.write(cover)
+            except BaseException:
+                temporary.unlink(missing_ok=True)
+                raise
+        try:
+            temporary.replace(destination)
+        finally:
+            temporary.unlink(missing_ok=True)
+        data['cover_file'] = name
+
+
+def save_metadata(project: Path, fields: dict, enrichment=None) -> dict:
     data = read_metadata(project)  # Don't silently discard malformed or custom data.
     data.update(metadata_fields(fields))
+    apply_enrichment(project, data, enrichment)
     atomic_json(project / "metadata.json", data)
     return describe_project(project)

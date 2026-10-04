@@ -6,3 +6,25 @@
 #home{margin-bottom:12px;text-align:left}.project-actions{display:flex;gap:8px;flex-wrap:wrap}.danger{color:#ffb4aa}.primary.danger{background:#9d3833;color:#fff}.primary.danger:hover:not(:disabled){background:#b3453f}.separation-panel{flex-wrap:wrap}#custom-stems{flex:0 0 100%;border:0;border-top:1px solid var(--line);padding:14px 0 0;margin:4px 0 0;display:flex;gap:12px;flex-wrap:wrap}#custom-stems legend{font-size:12px;color:var(--muted);padding:0 10px 0 0}#custom-stems label{display:flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid var(--line);border-radius:6px;cursor:pointer}.dialog-actions{display:flex;gap:12px;justify-content:flex-end}.delete-path{overflow-wrap:anywhere;font-size:12px}#delete-name{font-weight:bold;color:var(--text)}
 
 #other-help{flex-basis:100%;margin-top:0}
+/* Compact post-separation action beside the guitar title. */
+.track-name { display: flex; align-items: center; gap: 8px; }
+.split-guitar { display: inline-flex; align-items: center; justify-content: center; padding: 5px; border-radius: 6px; cursor: pointer; background: transparent; color: var(--accent); border: 1px solid var(--line); flex-shrink: 0; }
+.split-guitar:hover:not(:disabled) { background: var(--panel2); }
+.split-guitar:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.split-guitar:disabled { opacity: .4; cursor: wait; }
+
+.metadata-lookup { border-top: 1px solid var(--line); margin: 18px 0; padding-top: 15px; }
+.metadata-lookup .lookup-help,.metadata-lookup .lookup-status { font-size: 12px; margin: 10px 0; line-height: 1.5; }
+.lookup-results { max-height: 300px; overflow: auto; }
+.lookup-match { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.lookup-match strong { font-size: 13px; }
+.lookup-match p { font-size: 12px; margin: 6px 0; }
+.lookup-source { color: var(--accent); font-size: 12px; margin-right: 20px; text-decoration: underline; }
+.lookup-cover { width: 110px; height: 110px; object-fit: cover; border-radius: 6px; }
+.song-icon,.record-art { position: relative; overflow: hidden; }
+.song-icon img,.record-art img { width: 100%; height: 100%; object-fit: cover; position: absolute; inset: 0; }
+.record-art.has-cover .record { display: none; }
+.youtube-open { margin-top: 8px; font-size: 12px; }
+#youtube-log { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; font-size: 11px; }
+#youtube-status { margin: 15px 0; }
+#youtube-cancel { margin-top: 10px; }

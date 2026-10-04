@@ -2,15 +2,9 @@ services:
   master-track:
     build:
       context: .
-      args:
-        INSTALL_GUITARS: "${INSTALL_GUITARS:-false}"
     image: master-track:local
     init: true
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
-    environment:
-      SPOTIFY_CLIENT_ID: "${SPOTIFY_CLIENT_ID:-}"
-      SPOTIFY_CLIENT_SECRET: "${SPOTIFY_CLIENT_SECRET:-}"
-      HF_TOKEN: "${HF_TOKEN:-}"
     volumes:
       - ./input:/work/input:ro
       - ./stems:/work/stems

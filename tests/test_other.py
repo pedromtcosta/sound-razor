@@ -63,13 +63,13 @@ class OtherMixTests(unittest.TestCase):
         combine_other(self.paths, MODEL_STEMS['htdemucs.yaml'], ('bass', 'other'))
         self.assertAlmostEqual(self.samples()[0], .375, places=6)
 
-    def test_guitar_roles_do_not_duplicate_full_guitar(self):
-        for name in ('other', 'piano', 'rhythm'):
+    def test_selected_guitar_is_not_added_to_other(self):
+        for name in ('other', 'piano'):
             self.audio(name, .125)
         self.audio('guitar', .75)
         combine_other(self.paths, MODEL_STEMS[DEFAULT_MODEL],
-                      ('lead', 'bass', 'vocals', 'drums', 'other'))
-        self.assertAlmostEqual(self.samples()[0], .375, places=6)
+                      ('guitar', 'bass', 'vocals', 'drums', 'other'))
+        self.assertAlmostEqual(self.samples()[0], .25, places=6)
 
     def test_missing_unselected_stem_fails_without_replacing_other(self):
         original = self.audio('other', .25).read_bytes()
