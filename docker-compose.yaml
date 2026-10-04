@@ -1,12 +1,12 @@
 services:
-  master-track:
+  sound-razor:
     build:
       context: .
-    image: master-track:local
+    image: sound-razor:local
     init: true
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     volumes:
       - ./input:/work/input:ro
       - ./stems:/work/stems
-      - ./.master-track:/work/.master-track
+      - ./.sound-razor:/work/.sound-razor
     command: ["--help"]

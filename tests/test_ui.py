@@ -8,7 +8,7 @@ import time
 import unittest
 from urllib.parse import urlencode, quote
 
-from master_track.ui import Library, make_server, selection_stems
+from sound_razor.ui import Library, make_server, selection_stems
 from test_projects import wav_bytes
 
 
@@ -24,7 +24,7 @@ class UITests(unittest.TestCase):
         self.addCleanup(self.close)
         status, body = self.request("GET", "/", authorized=False)
         self.assertEqual(status, 200)
-        self.token = re.search(rb'name="master-track-token" content="([^"]+)"', body)[1].decode()
+        self.token = re.search(rb'name="sound-razor-token" content="([^"]+)"', body)[1].decode()
 
     def close(self):
         self.library.cancel()
@@ -36,7 +36,7 @@ class UITests(unittest.TestCase):
         connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=15)
         request_headers = dict(headers or {})
         if authorized:
-            request_headers["X-Master-Track-Token"] = self.token
+            request_headers["X-sound-razor-Token"] = self.token
         if isinstance(data, dict):
             data = json.dumps(data)
             request_headers["Content-Type"] = "application/json"

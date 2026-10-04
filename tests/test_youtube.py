@@ -1,8 +1,8 @@
 import tempfile
 from pathlib import Path
 import unittest
-from master_track.sources import youtube_url, youtube_command
-from master_track.ui import Library
+from sound_razor.sources import youtube_url, youtube_command
+from sound_razor.ui import Library
 
 class YouTubeTests(unittest.TestCase):
     def test_single_video_urls_are_canonicalized(self):

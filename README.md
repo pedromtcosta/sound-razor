@@ -1,4 +1,4 @@
-# Master Track
+# Sound Razor
 
 A simple command line tool for separating audio tracks and a Web UI with a media player to manage the files / projects.
 Currently this only supports a basic separation between Vocals, Bass, Drums, Guitar, and then further allowing a split between Lead and Rhythm guitars if necessary.
@@ -12,11 +12,11 @@ As my instrument is the guitar, you can see this is where I am focusing most of 
 
 ## What the application actually is
 
-Master Track is a local app and Python CLI that separates a mixed recording into WAV stems such as guitar, bass, vocals and drums. Its browser UI organizes song projects and plays stems together with mute, solo and volume controls.
+Sound Razor is a local app and Python CLI that separates a mixed recording into WAV stems such as guitar, bass, vocals and drums. Its browser UI organizes song projects and plays stems together with mute, solo and volume controls.
 
 FFmpeg converts the input audio, then the `audio-separator` Python library loads and runs a pretrained model. Demucs separates individual instruments; MDX separates vocals from instrumental accompaniment. Our code chooses a model from your arguments and saves the requested outputs.
 
-Python dependencies live in `.venv/`. Model files download automatically on first use and are cached in `.master-track/models/`. Processing a song runs inference—it does not train or modify the model. The outputs are estimates and can contain bleed or artifacts.
+Python dependencies live in `.venv/`. Model files download automatically on first use and are cached in `.sound-razor/models/`. Processing a song runs inference—it does not train or modify the model. The outputs are estimates and can contain bleed or artifacts.
 
 ## Local setup
 
@@ -32,16 +32,16 @@ If this environment is already installed, skip setup. Commands below use its exe
 ## Open the UI
 
 ```sh
-.venv/bin/master-track ui
+.venv/bin/sound-razor ui
 ```
 
 Open `http://127.0.0.1:8765` in your browser. Choose a projects folder with the built-in folder browser, or supply it at startup:
 
 ```sh
-.venv/bin/master-track ui --projects ./projects
+.venv/bin/sound-razor ui --projects ./projects
 ```
 
-The folder selection is remembered in `.master-track/ui.json`. Import a recording, optionally enter its title, artist, album and year, then choose **Vocals & instrumental** or **Custom** (select individual stems) and click **Separate tracks**. The original is copied into a new song folder; duplicate imports get separate folders. Use **Home** (or the logo) to return to the home screen. **Delete song** asks for confirmation before permanently removing that project folder, including its recording, metadata and stems.
+The folder selection is remembered in `.sound-razor/ui.json`. Import a recording, optionally enter its title, artist, album and year, then choose **Vocals & instrumental** or **Custom** (select individual stems) and click **Separate tracks**. The original is copied into a new song folder; duplicate imports get separate folders. Use **Home** (or the logo) to return to the home screen. **Delete song** asks for confirmation before permanently removing that project folder, including its recording, metadata and stems.
 
 Use **Find details** during import or in **Edit details** to search MusicBrainz by song title, optionally narrowing by artist and album. Choose a match, review its fields and cover, then save. Where available, Year uses the album's first release year; search results also distinguish live versions and editions. Cover Art Archive supplies artwork, which is saved beside `metadata.json` and remains available offline. Missing artwork does not prevent saving metadata. Only search text goes online; audio stays local. No LLM, API key, or paid credits are required. MusicBrainz's public API is free for noncommercial use; requests are rate-limited to one per second.
 
@@ -71,7 +71,7 @@ The server listens only on your computer's loopback address. No web framework or
 ## Separate a recording with the CLI
 
 ```sh
-.venv/bin/master-track separate \
+.venv/bin/sound-razor separate \
   --file ./files/Queensryche_Jet_City_Woman.opus \
   --stems guitar bass vocals drums
 ```
@@ -89,7 +89,7 @@ files/Queensryche_Jet_City_Woman/
 Use `--output` (or `--output-folder`) to choose an exact destination:
 
 ```sh
-.venv/bin/master-track separate --file ./files/song.opus \
+.venv/bin/sound-razor separate --file ./files/song.opus \
   --stems guitar bass vocals drums --output ./my-output
 ```
 
@@ -107,7 +107,7 @@ Reruns replace matching stem files and leave unrelated files intact. The command
 Model selection is automatic unless overridden. Selecting fewer files does not necessarily reduce inference work. `guitar` combines rhythm and lead.
 
 ```sh
-.venv/bin/master-track separate --help
+.venv/bin/sound-razor separate --help
 ```
 
 ## Optional inputs
@@ -118,7 +118,7 @@ Install the YouTube extra and a supported JavaScript runtime such as Deno:
 
 ```sh
 uv pip install --python .venv/bin/python -e '.[separation,youtube]'
-.venv/bin/master-track separate \
+.venv/bin/sound-razor separate \
   --youtube 'https://www.youtube.com/watch?v=VIDEO_ID' \
   --stems guitar bass vocals drums --output ./my-output
 ```
@@ -134,3 +134,8 @@ Successful splits show Lead and Rhythm in the player, preserving the combined `g
 Guitar splitting uses a vendored MIT-licensed Mel-Band RoFormer implementation from [MSST](https://github.com/ZFTurbo/Music-Source-Separation-Training) and the listra92 checkpoint from this [community archive](https://huggingface.co/noblebarkrr/mvsepless_resources). The weights are downloaded separately; their original training provenance and redistribution terms remain unverified.
 
 Local MDX and Demucs inference have been verified. The `train` command is explicitly unimplemented.
+
+## License
+
+Sound Razor's original source code is licensed under the [MIT License](LICENSE).
+Third-party code, model weights, artwork, and audio remain subject to their respective licenses and terms. The vendored RoFormer implementation retains its [upstream MIT license](sound_razor/vendor/roformer/LICENSE) and [attribution](sound_razor/vendor/roformer/NOTICE.md). This project's MIT license does not grant rights to downloaded model weights.

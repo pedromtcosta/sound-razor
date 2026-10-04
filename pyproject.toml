@@ -3,9 +3,10 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "master-track"
+name = "sound-razor"
 version = "0.1.0"
 description = "Local audio stem separation, music metadata lookup, and YouTube import"
+license = {file = "LICENSE"}
 requires-python = ">=3.11"
 dependencies = []
 
@@ -15,11 +16,11 @@ guitars = ["torch>=2.8", "numpy>=2,<3", "soundfile", "librosa>=0.11", "einops>=0
 youtube = ["yt-dlp[default]>=2025.1"]
 
 [project.scripts]
-master-track = "master_track.cli:main"
+sound-razor = "sound_razor.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["master_track*"]
+include = ["sound_razor*"]
 
 [tool.setuptools.package-data]
-master_track = ["web/*.html", "web/*.css", "web/*.js"]
-"master_track.vendor.roformer" = ["*.json", "LICENSE", "NOTICE.md"]
+sound_razor = ["web/*.html", "web/*.css", "web/*.js"]
+"sound_razor.vendor.roformer" = ["*.json", "LICENSE", "NOTICE.md"]

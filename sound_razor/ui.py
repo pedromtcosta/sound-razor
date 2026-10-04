@@ -190,10 +190,10 @@ class Library:
                 stage = Path(temporary) / "stems"
                 if guitar_split:
                     shutil.copytree(project/'stems', stage)
-                    command = [sys.executable, '-m', 'master_track', 'split-guitar',
+                    command = [sys.executable, '-m', 'sound_razor', 'split-guitar',
                                '--file', str(stage/'guitar.wav'), '--output', str(stage), '--cache', str(self.cache)]
                 else:
-                    command = [sys.executable, "-m", "master_track", "separate", "--file", str(project / original),
+                    command = [sys.executable, "-m", "sound_razor", "separate", "--file", str(project / original),
                                "--output", str(stage), "--cache", str(self.cache), "--stems", *stems]
                 env = dict(os.environ, PYTHONUNBUFFERED="1", ORT_DISABLE_TELEMETRY="1")
                 with self.lock:
@@ -336,7 +336,7 @@ def make_server(library: Library, port: int = 8765):
                 path = unquote(url.path)
                 query = {k: v[0] for k, v in parse_qs(url.query).items()}
                 if path.startswith("/api/"):
-                    if not secrets.compare_digest(self.headers.get("X-Master-Track-Token", ""), token):
+                    if not secrets.compare_digest(self.headers.get("X-sound-razor-Token", ""), token):
                         self.respond(403, {"error": "Reload the UI to authorize this session."})
                         return
                     result = self.api(method, path, query)
@@ -385,7 +385,7 @@ def make_server(library: Library, port: int = 8765):
                 return library.state()
             if method == "POST" and path == "/api/import":
                 size = self.body_size(2 * 1024**3)
-                with tempfile.TemporaryDirectory(prefix="master-track-upload-") as temporary:
+                with tempfile.TemporaryDirectory(prefix="sound-razor-upload-") as temporary:
                     upload = Path(temporary) / "upload"
                     with upload.open("wb") as out:
                         remaining = size
@@ -451,9 +451,9 @@ def make_server(library: Library, port: int = 8765):
 
 
 def serve(projects: Path | None, port: int, cache: Path):
-    library = Library(projects, Path(".master-track/ui.json"), cache)
+    library = Library(projects, Path(".sound-razor/ui.json"), cache)
     server = make_server(library, port)
-    print(f"Master Track UI: http://127.0.0.1:{server.server_port}", flush=True)
+    print(f"Sound Razor UI: http://127.0.0.1:{server.server_port}", flush=True)
     print("Open that address in your browser. Stop the server with Ctrl+C.", flush=True)
     try:
         server.serve_forever()

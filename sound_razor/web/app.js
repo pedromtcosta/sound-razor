@@ -1,7 +1,7 @@
 import {StemPlayer} from './player.js';
 
 const $ = id => document.getElementById(id);
-const token = document.querySelector('meta[name="master-track-token"]').content;
+const token = document.querySelector('meta[name="sound-razor-token"]').content;
 const player = new StemPlayer();
 const colors = ['#c6e69a', '#e8ad78', '#86bfb0', '#b1a0d9', '#e3cf80', '#84aacf'];
 let state = {root: null, projects: [], job: null};
@@ -26,7 +26,7 @@ async function coverImage(container, project) {
   if (!project.cover) return;
   const root = state.root;
   if (!coverImages.has(key)) {
-    coverImages.set(key, fetch(`${projectUrl(project.id)}/cover`, {headers: {'X-Master-Track-Token': token}})
+    coverImages.set(key, fetch(`${projectUrl(project.id)}/cover`, {headers: {'X-sound-razor-Token': token}})
       .then(r => { if (!r.ok) throw new Error('Cover unavailable'); return r.blob(); })
       .then(blob => URL.createObjectURL(blob)).catch(() => { coverImages.delete(key); return null; }));
     if (coverImages.size > 64) {
@@ -55,7 +55,7 @@ function time(seconds) {
 async function api(path, data) {
   const response = await fetch(path, {
     method: data === undefined ? 'GET' : 'POST',
-    headers: {'X-Master-Track-Token': token, ...(data === undefined ? {} : {'Content-Type': 'application/json'})},
+    headers: {'X-sound-razor-Token': token, ...(data === undefined ? {} : {'Content-Type': 'application/json'})},
     body: data === undefined ? undefined : JSON.stringify(data),
   });
   const result = await response.json();
@@ -201,7 +201,7 @@ async function loadAudio(project) {
     for (const [i, stem] of project.stems.entries()) {
       $('audio-status').textContent = `Loading ${stem.name} · ${i+1} of ${project.stems.length} stems`;
       const response = await fetch(`${projectUrl(project.id)}/audio/${encodeURIComponent(stem.file)}`, {
-        headers: {'X-Master-Track-Token': token}, signal,
+        headers: {'X-sound-razor-Token': token}, signal,
       });
       if (!response.ok) throw new Error(`Could not load ${stem.name}. Refresh the library and try again.`);
       const encoded = await response.arrayBuffer();
@@ -333,7 +333,7 @@ function upload(file, data) {
     const xhr = new XMLHttpRequest();
     const query = new URLSearchParams({...data, filename:file.name, root:state.root});
     xhr.open('POST', `/api/import?${query}`);
-    xhr.setRequestHeader('X-Master-Track-Token', token);
+    xhr.setRequestHeader('X-sound-razor-Token', token);
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
     xhr.upload.onprogress = e => { if (e.lengthComputable) $('upload-progress').value = e.loaded/e.total*100; };
     xhr.onload = () => { try { const result=JSON.parse(xhr.responseText); xhr.status===200 ? resolve(result) : reject(new Error(result.error)); } catch (_) { reject(new Error('Import failed. Check the server terminal.')); } };
@@ -488,7 +488,7 @@ for (const prefix of ['import', 'edit']) {
             results.replaceChildren(); results.hidden = false;
             results.append(el('p', '', `${match.album} selected. Save to keep these details${prepared.has_cover ? ' and cover' : ''}.`));
             if (prepared.has_cover) {
-              const response = await fetch(`/api/metadata/cover/${prepared.token}`, {headers: {'X-Master-Track-Token': token}});
+              const response = await fetch(`/api/metadata/cover/${prepared.token}`, {headers: {'X-sound-razor-Token': token}});
               if (!response.ok) throw new Error('Cover preview unavailable. You can still save the selected details.');
               const url = URL.createObjectURL(await response.blob());
               if (selectionEpoch !== lookupEpoch[prefix]) { URL.revokeObjectURL(url); return; }

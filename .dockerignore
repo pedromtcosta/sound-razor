@@ -2,7 +2,8 @@
 **
 !Dockerfile
 !pyproject.toml
-!master_track/
-!master_track/**
-master_track/**/__pycache__/
-master_track/**/*.pyc
+!LICENSE
+!sound_razor/
+!sound_razor/**
+sound_razor/**/__pycache__/
+sound_razor/**/*.pyc

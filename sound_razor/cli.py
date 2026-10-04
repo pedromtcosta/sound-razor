@@ -9,7 +9,7 @@ from .pipeline import DEFAULT_MODEL, STEM_CHOICES, separate, train
 
 
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(prog="master-track", description="Separate audio into WAV stems.")
+    root = argparse.ArgumentParser(prog="sound-razor", description="Separate audio into WAV stems.")
     commands = root.add_subparsers(dest="command", required=True)
     split = commands.add_parser("separate", help="Separate a local file or explicit YouTube video")
     source = split.add_mutually_exclusive_group(required=True)
@@ -20,17 +20,17 @@ def parser() -> argparse.ArgumentParser:
     split.add_argument("--model", help=f"Override automatic model selection (default: {DEFAULT_MODEL})")
     split.add_argument("--stems", nargs="+", choices=STEM_CHOICES,
                        help="Stems to save; other includes unselected parts. Default: all six Demucs stems.")
-    split.add_argument("--cache", type=Path, default=Path(".master-track/models"))
+    split.add_argument("--cache", type=Path, default=Path(".sound-razor/models"))
     guitar = commands.add_parser("split-guitar", help="Split an existing guitar stem into lead and rhythm")
     guitar.add_argument("--file", type=Path, required=True)
     guitar.add_argument("--output", type=Path, required=True)
-    guitar.add_argument("--cache", type=Path, default=Path(".master-track/models"))
+    guitar.add_argument("--cache", type=Path, default=Path(".sound-razor/models"))
     training = commands.add_parser("train", help="Fine-tuning boundary (not implemented)")
     training.add_argument("dataset", type=Path)
     ui = commands.add_parser("ui", help="Open a local project library and stem player in your browser")
     ui.add_argument("--projects", type=Path, help="Projects folder; otherwise use the last selection or choose in the UI")
     ui.add_argument("--port", type=int, default=8765)
-    ui.add_argument("--cache", type=Path, default=Path(".master-track/models"))
+    ui.add_argument("--cache", type=Path, default=Path(".sound-razor/models"))
     return root
 
 
@@ -55,8 +55,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, indent=2))
         return 0
     except KeyboardInterrupt:
-        print("master-track: interrupted", file=sys.stderr)
+        print("sound-razor: interrupted", file=sys.stderr)
         return 130
     except Exception as error:
-        print(f"master-track: {type(error).__name__}: {error}", file=sys.stderr)
+        print(f"sound-razor: {type(error).__name__}: {error}", file=sys.stderr)
         return 1

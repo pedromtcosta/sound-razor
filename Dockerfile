@@ -6,7 +6,7 @@ FROM python:3.11-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    XDG_CACHE_HOME=/tmp/master-track-cache \
+    XDG_CACHE_HOME=/tmp/sound-razor-cache \
     DENO_DIR=/tmp/deno-cache
 
 RUN apt-get update \
@@ -17,8 +17,8 @@ RUN apt-get update \
 COPY --from=deno /deno /usr/local/bin/deno
 
 WORKDIR /app
-COPY pyproject.toml ./
-COPY master_track/ ./master_track/
+COPY pyproject.toml LICENSE ./
+COPY sound_razor/ ./sound_razor/
 
 # Use CPU wheels on Linux instead of pulling CUDA libraries into this image.
 RUN python -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio \
@@ -27,10 +27,10 @@ RUN python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
 
 RUN groupadd --gid 1000 app \
     && useradd --uid 1000 --gid app --create-home app \
-    && mkdir -p /work/input /work/stems /work/.master-track \
+    && mkdir -p /work/input /work/stems /work/.sound-razor \
     && chown -R app:app /work
 
 WORKDIR /work
 USER app
-ENTRYPOINT ["master-track"]
+ENTRYPOINT ["sound-razor"]
 CMD ["--help"]

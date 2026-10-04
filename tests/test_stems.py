@@ -1,6 +1,6 @@
 import unittest
 
-from master_track.pipeline import DEFAULT_MODEL, MODEL_STEMS, VOCAL_MODEL, select_model
+from sound_razor.pipeline import DEFAULT_MODEL, MODEL_STEMS, VOCAL_MODEL, select_model
 
 
 class StemSelectionTests(unittest.TestCase):

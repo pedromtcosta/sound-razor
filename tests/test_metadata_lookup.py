@@ -3,8 +3,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from master_track.metadata_lookup import MetadataLookup, candidates, quote
-from master_track.projects import save_metadata, cover_path, describe_project
+from sound_razor.metadata_lookup import MetadataLookup, candidates, quote
+from sound_razor.projects import save_metadata, cover_path, describe_project
 
 
 class MetadataTests(unittest.TestCase):

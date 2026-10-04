@@ -13,7 +13,7 @@ from .projects import metadata_fields
 
 _network_lock = threading.Lock()
 _last_request = 0.0
-USER_AGENT = 'MasterTrack/0.1 (local personal music library; Python urllib)'
+USER_AGENT = 'SoundRazor/0.1 (local personal music library; Python urllib)'
 
 
 def fetch(url, maximum=2_000_000):

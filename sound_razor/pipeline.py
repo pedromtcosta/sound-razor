@@ -98,7 +98,7 @@ def output_directory(source: str, output: Path | None, youtube: bool = False) ->
 
 
 def separate(source: str, output: Path | None = None, model: str | None = None,
-             cache: Path = Path(".master-track/models"), youtube: bool = False,
+             cache: Path = Path(".sound-razor/models"), youtube: bool = False,
              stems: list[str] | None = None) -> list[Path]:
     model, selected_stems = select_model(model, stems)
     if not youtube and not Path(source).expanduser().is_file():
@@ -112,7 +112,7 @@ def separate(source: str, output: Path | None = None, model: str | None = None,
     output = output_directory(source, output, youtube)
     cache = cache.expanduser().resolve()
     cache.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="master-track-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="sound-razor-") as temporary:
         work = Path(temporary)
         audio = youtube_audio(source, work) if youtube else Path(source).expanduser().resolve()
         normalized = work / "input.wav"

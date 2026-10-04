@@ -7,7 +7,7 @@ import tempfile
 import unittest
 import wave
 
-from master_track.pipeline import combine_other, MODEL_STEMS, DEFAULT_MODEL
+from sound_razor.pipeline import combine_other, MODEL_STEMS, DEFAULT_MODEL
 
 
 @unittest.skipUnless(shutil.which('ffmpeg'), 'FFmpeg required')

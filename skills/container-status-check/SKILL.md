@@ -28,7 +28,7 @@ Scout's `--exit-code` returns 2 when vulnerabilities are detected. Treat that as
 If the application image already exists locally, scan it separately using its explicit local reference, for example:
 
 ```sh
-docker scout cves --only-severity critical,high --exit-code --format markdown local://master-track:local
+docker scout cves --only-severity critical,high --exit-code --format markdown local://sound-razor:local
 ```
 
 Record its ID/digest and whether it is known to match current sources. If absent, mark application-image scanning as not run; do not build solely to complete the report when builds have not been authorized. A base-image scan does not cover packages installed by `apt` or `pip`, nor all copied artifacts in the final image.

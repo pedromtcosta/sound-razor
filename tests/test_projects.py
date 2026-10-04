@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import wave
 
-from master_track.projects import (describe_project, import_project, list_projects,
+from sound_razor.projects import (describe_project, import_project, list_projects,
                                    project_path, save_metadata)
 
 

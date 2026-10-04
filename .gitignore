@@ -3,7 +3,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-.master-track/
+.sound-razor/
 stems/
 .env
 input/
