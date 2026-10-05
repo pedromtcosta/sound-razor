@@ -5,6 +5,7 @@ from collections import namedtuple
 import os
 import torch
 from torch import nn, einsum
+from torch.nn.attention import sdpa_kernel, SDPBackend
 import torch.nn.functional as F
 
 from einops import rearrange, reduce
@@ -13,17 +14,12 @@ from einops import rearrange, reduce
 
 FlashAttentionConfig = namedtuple('FlashAttentionConfig', ['enable_flash', 'enable_math', 'enable_mem_efficient'])
 
-try:
-    from torch.nn.attention import sdpa_kernel, SDPBackend
-    INFERENCE_SDPA_BACKENDS = [
-        SDPBackend.CUDNN_ATTENTION,
-        SDPBackend.FLASH_ATTENTION,
-        SDPBackend.EFFICIENT_ATTENTION,
-        SDPBackend.MATH,
-    ]
-    _HAS_SDPA_KERNEL = True
-except ImportError:
-    _HAS_SDPA_KERNEL = False
+INFERENCE_SDPA_BACKENDS = [
+    SDPBackend.CUDNN_ATTENTION,
+    SDPBackend.FLASH_ATTENTION,
+    SDPBackend.EFFICIENT_ATTENTION,
+    SDPBackend.MATH,
+]
 
 # helpers
 
@@ -94,7 +90,7 @@ class Attend(nn.Module):
 
         # inference on cuda: prefer cuDNN attention (available on Windows builds, ~1.9x faster than
         # mem efficient kernel for long sequences on Ampere/Blackwell), fall back to the others if unsupported
-        if is_cuda and not self.training and _HAS_SDPA_KERNEL:
+        if is_cuda and not self.training:
             with sdpa_kernel(INFERENCE_SDPA_BACKENDS, set_priority=True):
                 return F.scaled_dot_product_attention(q, k, v)
 
@@ -102,9 +98,16 @@ class Attend(nn.Module):
 
         config = self.cuda_config if is_cuda else self.cpu_config
 
-        # pytorch 2.0 flash attn: q, k, v, mask, dropout, softmax_scale
+        # Preserve the legacy context's enabled backends, including its cuDNN default.
+        backends = [SDPBackend.CUDNN_ATTENTION]
+        if config.enable_flash:
+            backends.append(SDPBackend.FLASH_ATTENTION)
+        if config.enable_math:
+            backends.append(SDPBackend.MATH)
+        if config.enable_mem_efficient:
+            backends.append(SDPBackend.EFFICIENT_ATTENTION)
 
-        with torch.backends.cuda.sdp_kernel(**config._asdict()):
+        with sdpa_kernel(backends):
             out = F.scaled_dot_product_attention(
                 q, k, v,
                 dropout_p = self.dropout if self.training else 0.

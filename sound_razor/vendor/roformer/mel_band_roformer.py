@@ -1,4 +1,5 @@
 from functools import partial
+import warnings
 
 import torch
 from torch import nn, einsum, tensor, Tensor
@@ -12,7 +13,16 @@ from torch.utils.checkpoint import checkpoint
 from beartype.typing import Tuple, Optional, List, Callable
 from beartype import beartype
 
-from rotary_embedding_torch import RotaryEmbedding
+# audio-separator requires rotary-embedding-torch 0.6.x, whose import-time
+# AMP decorators use the deprecated API. Filter only that dependency warning.
+with warnings.catch_warnings():
+    warnings.filterwarnings(
+        'ignore',
+        message=r'`torch\.cuda\.amp\.autocast\(args\.\.\.\)` is deprecated\.',
+        category=FutureWarning,
+        module=r'rotary_embedding_torch\.rotary_embedding_torch$',
+    )
+    from rotary_embedding_torch import RotaryEmbedding
 
 from einops import rearrange, pack, unpack, reduce, repeat
 from einops.layers.torch import Rearrange
