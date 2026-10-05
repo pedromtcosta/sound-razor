@@ -6,6 +6,8 @@ build/
 .sound-razor/
 stems/
 .env
+.env.*
+!.env.example
 input/
 projects/
 files/

@@ -89,6 +89,12 @@ class Library:
             raise ValueError("Choose a projects folder first.")
         return self.root
 
+    def require_matching_root(self, expected_root):
+        root = self.require_root()
+        if expected_root != str(root):
+            raise ValueError("The projects folder changed. Refresh the library and reopen this action.")
+        return root
+
     def state(self):
         with self.lock:
             job = dict(self.job) if self.job else None
@@ -396,19 +402,19 @@ def make_server(library: Library, port: int = 8765):
                             out.write(chunk)
                             remaining -= len(chunk)
                     with library.lock:
-                        if query.get("root") and query["root"] != str(library.require_root()):
-                            raise ValueError("The projects folder changed during upload. Please import again.")
+                        root = library.require_matching_root(query.get("root"))
                         enrichment = library.lookup.get(query['lookup_token']) if query.get('lookup_token') else None
-                        return import_project(library.require_root(), upload, query.get("filename", ""), query, enrichment)
+                        return import_project(root, upload, query.get("filename", ""), query, enrichment)
             if method == "POST" and path == "/api/cancel":
                 library.cancel()
                 return {"ok": True}
             parts = path.strip("/").split("/")
             if len(parts) >= 3 and parts[:2] == ["api", "projects"]:
                 with library.lock:
-                    project = project_path(library.require_root(), parts[2])
+                    data = self.json_body() if method == "POST" else query
+                    root = library.require_matching_root(data.get("root"))
+                    project = project_path(root, parts[2])
                     if method == "POST" and len(parts) == 4 and parts[3] == "metadata":
-                        data = self.json_body()
                         enrichment = library.lookup.get(data['lookup_token']) if data.get('lookup_token') else None
                         return save_metadata(project, data, enrichment)
                     if method == 'GET' and len(parts) == 4 and parts[3] == 'cover':
@@ -418,13 +424,11 @@ def make_server(library: Library, port: int = 8765):
                         self.respond(200, cover.read_bytes(), 'image/png' if cover.suffix == '.png' else 'image/jpeg')
                         return None
                     if method == "POST" and len(parts) == 4 and parts[3] == "separate":
-                        data = self.json_body()
                         return library.start(parts[2], data.get("preset", "vocals"), data.get("stems"))
                     if method == "POST" and len(parts) == 4 and parts[3] == "split-guitar":
-                        self.json_body()
                         return library.start(parts[2], 'guitar', guitar_split=True)
                     if method == "POST" and len(parts) == 4 and parts[3] == "delete":
-                        return library.delete(parts[2], self.json_body().get("root"))
+                        return library.delete(parts[2], data.get("root"))
                     if method == "GET" and len(parts) == 5 and parts[3] == "audio":
                         name = parts[4]
                         allowed = {s["file"] for s in describe_project(project)["stems"]}

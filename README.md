@@ -18,6 +18,8 @@ FFmpeg converts the input audio, then the `audio-separator` Python library loads
 
 Python dependencies live in `.venv/`. Model files download automatically on first use and are cached in `.sound-razor/models/`. Processing a song runs inference—it does not train or modify the model. The outputs are estimates and can contain bleed or artifacts.
 
+Built-in MDX, Demucs, and lead/rhythm checkpoints are verified against pinned SHA-256 checksums before use, including the Demucs configuration files. Downloads enter the cache only after validation; incomplete or corrupt entries are downloaded again on the next attempt. Other `--model` choices use the upstream catalog and require trust in that source; their download receipts detect corruption but do not authenticate the weights.
+
 ## System requirements
 
 These are planning estimates for inference and playback of typical 3–6 minute songs, not verified minimum requirements. Longer recordings, different models, and other running applications increase resource use.
@@ -129,7 +131,7 @@ Use `--output` (or `--output-folder`) to choose an exact destination:
   --stems guitar bass vocals drums --output ./my-output
 ```
 
-Reruns replace matching stem files and leave unrelated files intact. The command prints a JSON array of absolute output paths; progress and errors go to stderr.
+Reruns replace matching stem files and leave unrelated files intact. Both separation commands reject outputs that would overwrite their input recording, including aliases through links. The command prints a JSON array of absolute output paths; progress and errors go to stderr.
 
 | Arguments | Behavior |
 | --- | --- |
@@ -170,6 +172,17 @@ Successful splits show Lead and Rhythm in the player, preserving the combined `g
 Guitar splitting uses a vendored MIT-licensed Mel-Band RoFormer implementation from [MSST](https://github.com/ZFTurbo/Music-Source-Separation-Training) and the listra92 checkpoint from this [community archive](https://huggingface.co/noblebarkrr/mvsepless_resources). The weights are downloaded separately; their original training provenance and redistribution terms remain unverified.
 
 Local MDX and Demucs inference have been verified. The `train` command is explicitly unimplemented.
+
+## Development checks
+
+With FFmpeg and the optional dependencies installed:
+
+```sh
+.venv/bin/python -m unittest discover -s tests -v
+uv pip compile pyproject.toml --all-extras --python .venv/bin/python
+```
+
+The tests use temporary files and local HTTP fixtures; they do not download model weights. GitHub Actions also checks installation of all extras in a fresh environment so an existing environment cannot hide dependency conflicts.
 
 ## License
 

@@ -1,11 +1,11 @@
 """Reference-free lead guitar inference with the tested listra92 checkpoint."""
 import contextlib
-import hashlib
 import json
 from pathlib import Path
 import sys
 import tempfile
-from urllib.request import urlopen
+from .model_cache import cached_download
+from .output_files import validate_outputs
 
 MODEL_URL = ('https://huggingface.co/noblebarkrr/mvsepless_resources/resolve/main/'
              'mel_band_roformer/mbr_lead_rhythm_guitar_listra92.ckpt')
@@ -14,30 +14,20 @@ MODEL_SHA256 = 'b3c47bca33609ca1ba0bb2d2076410bfd1eb941b051b72afc1f3e24d12b17eef
 
 def checkpoint(cache):
     destination = cache.expanduser().resolve() / 'lead_rhythm_listra92.ckpt'
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    def digest(path):
-        with path.open('rb') as stream:
-            return hashlib.file_digest(stream, 'sha256').hexdigest()
-    if destination.is_file() and digest(destination) == MODEL_SHA256:
-        return destination
-    print('Downloading lead/rhythm model (321 MiB)…', file=sys.stderr, flush=True)
-    with tempfile.TemporaryDirectory(dir=destination.parent, prefix='.guitar-download-') as temporary:
-        download = Path(temporary) / 'model.ckpt'
-        with urlopen(MODEL_URL, timeout=60) as response, download.open('wb') as stream:
-            count = 0
-            while block := response.read(8 * 1024 * 1024):
-                stream.write(block)
-                count += len(block)
-                print(f'Downloaded {count // (1024 * 1024)} MiB', file=sys.stderr, flush=True)
-        if digest(download) != MODEL_SHA256:
-            raise RuntimeError('The downloaded guitar model failed checksum verification.')
-        download.replace(destination)
-    return destination
+    return cached_download(MODEL_URL, destination, MODEL_SHA256)
 
 
 def split_guitar(source: Path, output: Path, cache: Path) -> list[Path]:
+    source = source.expanduser().resolve()
+    output = output.expanduser().resolve()
     if not source.is_file():
         raise ValueError('Separate the guitar track first.')
+    paths = [output/'lead.wav', output/'rhythm.wav']
+    settings_path = output/'separation.json'
+    validate_outputs(source, paths + [settings_path])
+    settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+    if not isinstance(settings, dict):
+        raise ValueError('Separation settings must contain a JSON object.')
     try:
         import numpy as np
         import soundfile as sf
@@ -91,11 +81,13 @@ def split_guitar(source: Path, output: Path, cache: Path) -> list[Path]:
     if lead.shape != mix.shape or not np.isfinite(lead).all():
         raise RuntimeError('Guitar model produced invalid audio.')
     output.mkdir(parents=True, exist_ok=True)
-    paths = [output/'lead.wav', output/'rhythm.wav']
-    sf.write(paths[0], lead, sr, subtype='FLOAT')
-    sf.write(paths[1], mix-lead, sr, subtype='FLOAT')
-    settings_path = output/'separation.json'
-    settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
     settings['lead_rhythm_split'] = {'model': 'listra92', 'sha256': MODEL_SHA256, 'overlap': 0.5}
-    settings_path.write_text(json.dumps(settings, indent=2)+'\n')
+    with tempfile.TemporaryDirectory(prefix='.guitar-split-', dir=output) as temporary:
+        stage = Path(temporary)
+        sf.write(stage/paths[0].name, lead, sr, subtype='FLOAT')
+        sf.write(stage/paths[1].name, mix-lead, sr, subtype='FLOAT')
+        (stage/settings_path.name).write_text(json.dumps(settings, indent=2)+'\n')
+        validate_outputs(source, paths + [settings_path])
+        for path in paths + [settings_path]:
+            (stage/path.name).replace(path)
     return [path.resolve() for path in paths]

@@ -4,7 +4,6 @@ import contextlib
 import importlib.util
 import logging
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -12,6 +11,8 @@ import tempfile
 from pathlib import Path
 
 from .sources import youtube_audio
+from .model_cache import create_separator
+from .output_files import validate_outputs
 
 DEFAULT_MODEL = "htdemucs_6s.yaml"
 VOCAL_MODEL = "UVR_MDXNET_KARA_2.onnx"
@@ -103,13 +104,16 @@ def separate(source: str, output: Path | None = None, model: str | None = None,
     model, selected_stems = select_model(model, stems)
     if not youtube and not Path(source).expanduser().is_file():
         raise ValueError(f"Audio file does not exist: {source}")
+    output = output_directory(source, output, youtube)
+    original = None if youtube else Path(source).expanduser().resolve()
+    settings = output / "separation.json"
+    validate_outputs(original, [output / f"{stem}.wav" for stem in selected_stems or ()] + [settings])
     if not shutil.which("ffmpeg"):
         raise RuntimeError("Install FFmpeg and put it on PATH.")
     if importlib.util.find_spec("audio_separator") is None:
         raise RuntimeError('Install separation support: pip install -e ".[separation]"')
     if youtube and importlib.util.find_spec("yt_dlp") is None:
         raise RuntimeError('Install YouTube support: pip install -e ".[youtube]"')
-    output = output_directory(source, output, youtube)
     cache = cache.expanduser().resolve()
     cache.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="sound-razor-") as temporary:
@@ -119,13 +123,7 @@ def separate(source: str, output: Path | None = None, model: str | None = None,
         normalize(audio, normalized)
         # Upstream progress/prints must not corrupt the JSON result on stdout.
         with contextlib.redirect_stdout(sys.stderr):
-            # ORT 1.30's native telemetry uploader can crash during shutdown on
-            # macOS. Disable it before importing anything that initializes ORT;
-            # disable_telemetry_events() after import is too late for startup events.
-            os.environ["ORT_DISABLE_TELEMETRY"] = "1"
-            from audio_separator.separator import Separator
-
-            separator = Separator(
+            separator = create_separator(
                 output_dir=str(work), output_format="WAV",
                 model_file_dir=str(cache), log_level=logging.WARNING,
                 mdx_params={"hop_length": 1024, "segment_size": 256,
@@ -151,13 +149,18 @@ def separate(source: str, output: Path | None = None, model: str | None = None,
             paths = [by_stem[stem] for stem in selected_stems]
         # Persist requested stems, with unselected parts folded into Other when requested.
         destinations = [output / path.name for path in paths]
-        if any(path.is_dir() for path in destinations):
-            raise ValueError("An output filename conflicts with an existing directory.")
-        result = [Path(shutil.move(str(path), str(destination))).resolve()
-                for path, destination in zip(paths, destinations)]
-        settings = output / "separation.json"
-        settings.write_text(json.dumps({"stems": selected_stems}, indent=2) + "\n")
-        return result
+        validate_outputs(original, destinations + [settings])
+        # Stage on the destination filesystem so replacement never falls back to
+        # copying over an existing file (which could be a link to another file).
+        with tempfile.TemporaryDirectory(prefix=".stems-", dir=output) as staged:
+            stage = Path(staged)
+            for path in paths:
+                shutil.copyfile(path, stage / path.name)
+            (stage / settings.name).write_text(json.dumps({"stems": selected_stems}, indent=2) + "\n")
+            validate_outputs(original, destinations + [settings])
+            for destination in destinations + [settings]:
+                (stage / destination.name).replace(destination)
+        return [path.resolve() for path in destinations]
 
 
 def train(dataset: Path) -> None:

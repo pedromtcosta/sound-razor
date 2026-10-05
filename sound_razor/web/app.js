@@ -26,7 +26,7 @@ async function coverImage(container, project) {
   if (!project.cover) return;
   const root = state.root;
   if (!coverImages.has(key)) {
-    coverImages.set(key, fetch(`${projectUrl(project.id)}/cover`, {headers: {'X-sound-razor-Token': token}})
+    coverImages.set(key, fetch(`${projectUrl(project.id)}/cover?${new URLSearchParams({root})}`, {headers: {'X-sound-razor-Token': token}})
       .then(r => { if (!r.ok) throw new Error('Cover unavailable'); return r.blob(); })
       .then(blob => URL.createObjectURL(blob)).catch(() => { coverImages.delete(key); return null; }));
     if (coverImages.size > 64) {
@@ -193,6 +193,7 @@ function clearAudio() {
 async function loadAudio(project) {
   clearAudio();
   const epoch = loading;
+  const root = state.root;
   controller = new AbortController();
   const signal = controller.signal;
   if (!project.stems.length) { $('audio-status').textContent = 'Separate the recording to load tracks into the mixer.'; return; }
@@ -200,7 +201,7 @@ async function loadAudio(project) {
   try {
     for (const [i, stem] of project.stems.entries()) {
       $('audio-status').textContent = `Loading ${stem.name} · ${i+1} of ${project.stems.length} stems`;
-      const response = await fetch(`${projectUrl(project.id)}/audio/${encodeURIComponent(stem.file)}`, {
+      const response = await fetch(`${projectUrl(project.id)}/audio/${encodeURIComponent(stem.file)}?${new URLSearchParams({root})}`, {
         headers: {'X-sound-razor-Token': token}, signal,
       });
       if (!response.ok) throw new Error(`Could not load ${stem.name}. Refresh the library and try again.`);
@@ -257,9 +258,10 @@ function renderTracks() {
       split.dataset.splitGuitar = ''; split.disabled = !!jobRunning();
       split.innerHTML = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h5c4 0 3-7 7-7h4M9 12c4 0 3 7 7 7h4M17 2l3 3-3 3M17 16l3 3-3 3"/></svg>';
       const projectId = selected;
+      const projectRoot = state.root;
       split.onclick = async () => {
         split.disabled = true;
-        try { await api(`${projectUrl(projectId)}/split-guitar`, {}); notice(); await refresh(); }
+        try { await api(`${projectUrl(projectId)}/split-guitar`, {root: projectRoot}); notice(); await refresh(); }
         catch (error) { notice(error.message); split.disabled = !!jobRunning(); }
       };
       label.querySelector('.track-name').append(split);
@@ -374,14 +376,16 @@ $('import-form').onsubmit = async e => {
   finally { busy=false; $('import-submit').disabled=false; $('import-submit').textContent='Create project'; renderLibrary(); }
 };
 $('edit-open').onclick = () => {
-  const p=activeProject(); if(!p)return; editing=p.id;
+  const p=activeProject(); if(!p)return; editing={id: p.id, root: state.root};
   resetLookup('edit');
   for(const key of ['title','artist','album','year']) $(`edit-${key}`).value=p[key]||'';
   $('edit-error').textContent=''; $('edit-dialog').showModal();
 };
 $('edit-form').onsubmit = async e => {
   e.preventDefault();
-  try { await api(`${projectUrl(editing)}/metadata`,fields('edit')); $('edit-dialog').close(); await refresh(); }
+  if (!editing) return;
+  const target = editing;
+  try { await api(`${projectUrl(target.id)}/metadata`,{...fields('edit'), root: target.root}); $('edit-dialog').close(); await refresh(); }
   catch(error) { $('edit-error').textContent=error.message; }
 };
 function goHome(event) {
@@ -414,7 +418,7 @@ $('delete-form').onsubmit = async event => {
 };
 $('separate').onclick = async () => {
   if(!selected)return; $('separate').disabled=true;
-  try { await api(`${projectUrl(selected)}/separate`,{preset:$('preset').value, stems:chosenStems()}); notice(); await refresh(); }
+  try { await api(`${projectUrl(selected)}/separate`,{root:state.root, preset:$('preset').value, stems:chosenStems()}); notice(); await refresh(); }
   catch(error) { notice(error.message); renderProject(); }
 };
 $('cancel').onclick = () => api('/api/cancel',{}).then(refresh).catch(e => notice(e.message));

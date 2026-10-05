@@ -12,7 +12,7 @@ dependencies = []
 
 [project.optional-dependencies]
 separation = ["audio-separator[cpu]>=0.30,<0.45"]
-guitars = ["torch>=2.8", "numpy>=2,<3", "soundfile", "librosa>=0.11", "einops>=0.8", "beartype", "rotary-embedding-torch>=0.9", "packaging"]
+guitars = ["torch>=2.8", "numpy>=2,<3", "soundfile", "librosa>=0.11", "einops>=0.8", "beartype", "rotary-embedding-torch>=0.6.5,<0.7", "packaging"]
 youtube = ["yt-dlp[default]>=2025.1"]
 
 [project.scripts]

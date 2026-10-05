@@ -32,9 +32,14 @@ class UITests(unittest.TestCase):
         self.server.server_close()
         self.thread.join()
 
-    def request(self, method, path, data=None, authorized=True, headers=None):
+    def request(self, method, path, data=None, authorized=True, headers=None, include_root=True):
         connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=15)
         request_headers = dict(headers or {})
+        if include_root:
+            if method == "POST" and path.startswith("/api/projects/") and isinstance(data, dict):
+                data = {"root": str(self.library.root), **data}
+            elif (method == "GET" and path.startswith("/api/projects/")) or path.startswith("/api/import?"):
+                path += ("&" if "?" in path else "?") + urlencode({"root": str(self.library.root)})
         if authorized:
             request_headers["X-sound-razor-Token"] = self.token
         if isinstance(data, dict):
@@ -72,6 +77,38 @@ class UITests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body, wav_bytes())
         self.assertEqual(self.request("GET", f"/api/projects/{identifier}/audio/metadata.json")[0], 400)
+
+    def test_stale_or_missing_library_cannot_change_or_read_another_project(self):
+        old_root = self.library.root
+        new_root = self.directory / "other-library"
+        for root, title in ((old_root, "First song"), (new_root, "Second song")):
+            project = root / "Same name"
+            (project / "stems").mkdir(parents=True)
+            (project / "original.wav").write_bytes(wav_bytes())
+            (project / "metadata.json").write_text(json.dumps({"title": title}))
+            for stem in ("guitar", "vocals"):
+                (project / "stems" / f"{stem}.wav").write_bytes(wav_bytes())
+        self.assertEqual(self.request("POST", "/api/library", {"path": str(new_root)})[0], 200)
+        route = "/api/projects/" + quote("Same name", safe="")
+        for root in (None, str(old_root)):
+            for action in ("metadata", "separate", "split-guitar", "delete"):
+                with self.subTest(root=root, action=action):
+                    body = {"title": "Wrong edit", "preset": "vocals"}
+                    if root is not None:
+                        body["root"] = root
+                    status, response = self.request("POST", route + "/" + action, body, include_root=False)
+                    self.assertEqual(status, 400, response)
+                    self.assertIn(b"projects folder changed", response)
+                    self.assertIsNone(self.library.job)
+            for action in ("cover", "audio/vocals.wav"):
+                query = "?" + urlencode({"root": root}) if root is not None else ""
+                status, response = self.request("GET", route + "/" + action + query, include_root=False)
+                self.assertEqual(status, 400, response)
+                self.assertIn(b"projects folder changed", response)
+        for root, title in ((old_root, "First song"), (new_root, "Second song")):
+            self.assertEqual(json.loads((root / "Same name" / "metadata.json").read_text())["title"], title)
+        self.assertEqual(self.request("POST", route + "/metadata", {"title": "Correct edit"})[0], 200)
+        self.assertEqual(json.loads((new_root / "Same name" / "metadata.json").read_text())["title"], "Correct edit")
 
     def test_root_persistence_and_invalid_preset(self):
         destination = self.directory / "new-library"
