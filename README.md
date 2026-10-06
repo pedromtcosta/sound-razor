@@ -14,11 +14,54 @@ As my instrument is the guitar, you can see this is where I am focusing most of 
 
 Sound Razor is a local app and Python CLI that separates a mixed recording into WAV stems such as guitar, bass, vocals and drums. Its browser UI organizes song projects and plays stems together with mute, solo and volume controls.
 
-FFmpeg converts the input audio, then the `audio-separator` Python library loads and runs a pretrained model. Demucs separates individual instruments; MDX separates vocals from instrumental accompaniment. Our code chooses a model from your arguments and saves the requested outputs.
+FFmpeg converts the input audio, then the `audio-separator` Python library loads and runs a pretrained model. Demucs separates individual instruments; MDX separates vocals from instrumental accompaniment. Our code chooses a model from your arguments and saves the requested outputs. The optional lead/rhythm step runs a separate model directly through PyTorch.
 
 Python dependencies live in `.venv/`. Model files download automatically on first use and are cached in `.sound-razor/models/`. Processing a song runs inference—it does not train or modify the model. The outputs are estimates and can contain bleed or artifacts.
 
-Built-in MDX, Demucs, and lead/rhythm checkpoints are verified against pinned SHA-256 checksums before use, including the Demucs configuration files. Downloads enter the cache only after validation; incomplete or corrupt entries are downloaded again on the next attempt. Other `--model` choices use the upstream catalog and require trust in that source; their download receipts detect corruption but do not authenticate the weights.
+## Models and how they run
+
+These are audio source-separation models. Each combines a network architecture (the calculations to perform) with pretrained **weights** (numerical parameters learned during training). An inference runtime loads those weights and applies the calculations to your audio. The model's training determines the parts it can distinguish; selecting a stem saves an output supported by that model.
+
+### Which model is used?
+
+| Model | Purpose and automatic selection | Files in `.sound-razor/models/` | Package that runs it |
+| --- | --- | --- | --- |
+| **Hybrid Transformer Demucs, six stems** | Used when no `--stems` are specified, or when guitar or piano is requested. Produces vocals, drums, bass, guitar, piano and other. | `htdemucs_6s.yaml` + `5c90dfd2-34c22ccb.th` | `audio-separator`'s bundled Demucs implementation, using PyTorch (`torch`). |
+| **Hybrid Transformer Demucs, four stems** | Used for other instrument combinations, such as vocals + drums + bass. Produces vocals, drums, bass and other; guitars and piano belong to other. | `htdemucs.yaml` + `955717e8-8726e21a.th` | The same Demucs backend in `audio-separator`, using PyTorch. |
+| **MDX / UVR KARA 2** | Used when the requested stems contain only vocals and/or instrumental. Produces the two complementary parts of the recording. | `UVR_MDXNET_KARA_2.onnx` | `audio-separator`'s MDX backend, using `onnxruntime` with our current settings. |
+| **Mel-Band RoFormer, listra92 lead/rhythm checkpoint** | Used by **Split into lead and rhythm** or `split-guitar`, after a combined guitar stem exists. Predicts lead guitar; Sound Razor subtracts that prediction from the input to produce rhythm. | `lead_rhythm_listra92.ckpt` | Sound Razor's bundled RoFormer implementation, using PyTorch directly. |
+
+`--model` overrides automatic selection for basic separation. All built-in models run locally and require no account or token. The six-stem model's guitar output contains both lead and rhythm; the second stage is needed to separate them. The lead/rhythm model takes audio alone, with no text prompts or reference clips.
+
+### What are the files?
+
+- **`.yaml` — readable Demucs configuration.** For example, `htdemucs_6s.yaml` contains `models: ['5c90dfd2']`, telling the Demucs loader which `.th` checkpoint to load. The YAML is parsed with `PyYAML`; it contains no learned weights.
+- **`.th` — binary PyTorch checkpoint.** Contains trained Demucs parameters and information needed to reconstruct the model using the Demucs code bundled inside `audio-separator`. Installing a separate `demucs` package is unnecessary.
+- **`.onnx` — binary model graph and weights.** Contains the MDX network's operations and trained parameters. ONNX Runtime executes that graph; `audio-separator` handles audio preparation and writes the stems. This checkpoint predicts the instrumental part, and the backend derives vocals from the remainder.
+- **`.ckpt` — binary PyTorch weights for the guitar splitter.** The architecture code lives in [sound_razor/vendor/roformer/](sound_razor/vendor/roformer/), and its settings are committed in [lead_rhythm.json](sound_razor/vendor/roformer/lead_rhythm.json). Our code constructs `MelBandRoformer`, reads the checkpoint with `torch.load(..., weights_only=True)`, and applies it with `load_state_dict()`.
+
+The cache also contains small support files used by `audio-separator`:
+
+| File | What it contains |
+| --- | --- |
+| `mdx_model_data.json` | Model-hash lookup table for MDX settings, including frequency/time dimensions, gain compensation and the primary stem's name. |
+| `vr_model_data.json` | Equivalent settings for the backend's VR model family. The library fetches both lookup tables when loading MDX; this does not mean a VR model is being run. |
+| `download_checks.json` | Upstream catalog of available models and download locations. Custom `--model` choices use it; our built-in selections use the explicit file mapping in [model_cache.py](sound_razor/model_cache.py). |
+| `.<filename>.sha256`, when present | A local integrity receipt for an unpinned binary download. It contains a checksum, not model weights. Built-in files use checksums recorded in our source code instead. |
+
+The binary files are loaded by the packages above; they are not standalone programs launched by the operating system. Demucs checkpoints use Python object deserialization, so their source matters. Built-in MDX, Demucs, and lead/rhythm checkpoints are verified against pinned SHA-256 checksums before use, including the Demucs configuration files. Downloads enter the cache only after validation; incomplete or corrupt entries are downloaded again on the next attempt. Other `--model` choices use the upstream catalog and require trust in that source; their download receipts detect corruption but do not authenticate the weights.
+
+Model downloads are separate from Python package installation. Only the selected model's weights are needed, so a fresh cache will not contain every file listed above. The default cache is relative to the directory where you run Sound Razor; `--cache` changes it. It is ignored by Git. The built-in download URLs and checksums are recorded in [model_cache.py](sound_razor/model_cache.py) and [guitar_split.py](sound_razor/guitar_split.py): Demucs weights come from Meta's public file server, MDX weights and Demucs YAML files from the UVR model repository, and lead/rhythm weights from the community archive linked below.
+
+### Where execution happens
+
+For basic separation, [pipeline.py](sound_razor/pipeline.py) runs FFmpeg to create a stereo 44.1 kHz WAV, then calls `create_separator(...)`, `separator.load_model(model_filename=...)`, and `separator.separate(...)`. The first call creates our subclass of `audio_separator.separator.Separator`, which validates downloads. We pass the model cache, output format and folder, and processing settings into that Python object. Its backend loads the selected model, runs inference and returns output filenames. Sound Razor then keeps the requested stems and folds unselected parts into **Other** when requested.
+
+The `separation` installation extra supplies `audio-separator[cpu]` and its dependencies, including PyTorch and ONNX Runtime. Device selection is delegated to the library, based on the installed runtimes and available hardware, with CPU as the fallback. Sound Razor currently uses 25% overlap for both MDX and Demucs, with Demucs shift averaging disabled.
+
+For guitar splitting, [guitar_split.py](sound_razor/guitar_split.py) loads and calls the model itself. The `guitars` extra supplies PyTorch for inference, NumPy for audio arrays, SoundFile for WAV reading/writing, and the architecture's supporting packages (`librosa`, `einops`, `rotary-embedding-torch`, `beartype` and `packaging`). It processes three-second windows with 50% overlap, blends their predictions, and saves `lead.wav` plus `rhythm.wav`. This stage currently uses four CPU threads.
+
+The browser UI starts these same CLI commands in a subprocess using the server's Python environment. The models run in that local Python process; the browser receives the finished audio files for playback.
 
 ## System requirements
 
