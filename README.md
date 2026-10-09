@@ -148,6 +148,8 @@ The UI runs the existing CLI in a background subprocess, with one separation at 
 
 The player schedules all stems on one audio clock. It provides play/pause, seek, mute, solo, per-stem volume and master volume; the space bar toggles playback outside input controls. All unmuted stems form the reconstructed mix. Select **Other** to include every unselected part: for example, Guitar + Bass + Vocals + Drums + Other folds piano into Other. Without Other, unselected parts are omitted. This applies to the UI and CLI; rerun separation to update existing stems. Stems load into browser memory for synchronized playback, so long recordings or many tracks can use substantial RAM. Only the current project's audio is retained by the player.
 
+Use **Speed** in the player to slow the mix to **50–100%** of its original speed in 5% steps while keeping the original pitch. For example, 75% plays at three quarters of normal speed. Release the slider to apply a change; the reset arrow restores 100%. Speed changes keep your position, mute, solo and volume settings, and all stems stay synchronized. The time display and seek bar continue to show positions in the original recording. The selected speed carries across projects until you reset it or reload the page. Processing stays in the browser and does not change saved audio files.
+
 The server listens only on your computer's loopback address. No web framework or frontend build is required. Use `--port` to change the port and `--cache` to change the model cache. Stop the server with Ctrl+C; this also cancels an active separation. Custom separation offers vocals, guitar, bass, drums, piano and other.
 ## Separate a recording with the CLI
 
@@ -222,12 +224,15 @@ With FFmpeg and the optional dependencies installed:
 
 ```sh
 .venv/bin/python -m unittest discover -s tests -v
+node --test tests/test_player.mjs
 uv pip compile pyproject.toml --all-extras --python .venv/bin/python
 ```
 
-The tests use temporary files and local HTTP fixtures; they do not download model weights. GitHub Actions also checks installation of all extras in a fresh environment so an existing environment cannot hide dependency conflicts.
+The tests use temporary files and local HTTP fixtures; they do not download model weights. The player tests require Node.js 18 or newer and exercise the actual audio processor with generated tones, without npm dependencies. GitHub Actions also checks installation of all extras in a fresh environment so an existing environment cannot hide dependency conflicts.
 
 ## License
 
 Sound Razor's original source code is licensed under the [MIT License](LICENSE).
 Third-party code, model weights, artwork, and audio remain subject to their respective licenses and terms. The vendored RoFormer implementation retains its [upstream MIT license](sound_razor/vendor/roformer/LICENSE) and [attribution](sound_razor/vendor/roformer/NOTICE.md). This project's MIT license does not grant rights to downloaded model weights.
+
+Pitch-preserving playback uses a local copy of [SoundTouchJS](https://github.com/cutterbl/SoundTouchJS), licensed under MPL-2.0; its [license and source information](sound_razor/web/vendor/soundtouch/NOTICE.md) ship with the app.

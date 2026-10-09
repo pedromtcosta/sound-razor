@@ -22,5 +22,5 @@ sound-razor = "sound_razor.cli:main"
 include = ["sound_razor*"]
 
 [tool.setuptools.package-data]
-sound_razor = ["web/*.html", "web/*.css", "web/*.js"]
+sound_razor = ["web/*.html", "web/*.css", "web/*.js", "web/vendor/soundtouch/*"]
 "sound_razor.vendor.roformer" = ["*.json", "LICENSE", "NOTICE.md"]

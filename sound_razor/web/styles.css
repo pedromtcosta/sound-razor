@@ -28,3 +28,22 @@
 #youtube-log { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; font-size: 11px; }
 #youtube-status { margin: 15px 0; }
 #youtube-cancel { margin-top: 10px; }
+
+.transport-main { display: flex; align-items: center; gap: 17px; flex: 1; min-width: 180px; }
+.playback-speed { width: 158px; flex-shrink: 0; padding-left: 16px; border-left: 1px solid var(--line); }
+.speed-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.speed-heading label { color: var(--muted); font-size: 8px; letter-spacing: 1px; }
+#speed-value { color: var(--accent); font-size: 11px; font-variant-numeric: tabular-nums; }
+.speed-controls { display: flex; align-items: center; gap: 5px; }
+.speed-controls input { flex: 1; min-width: 35px; width: 100%; }
+.speed-controls button { font-size: 18px; padding: 1px 3px; }
+#speed-help { display: block; color: var(--muted); font-size: 9px; }
+@media (max-width: 1000px) {
+  main { padding-bottom: 160px; }
+  .transport { height: auto; min-height: 120px; flex-wrap: wrap; gap: 10px 18px; padding-top: 12px; padding-bottom: 12px; }
+  .transport-main { flex: 1 0 100%; gap: 10px; }
+  .playback-speed { width: auto; flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding-left: 0; border-left: 0; }
+  .speed-heading { min-width: 86px; }
+  .speed-controls { flex: 1; }
+  #speed-help { flex-basis: 100%; }
+}

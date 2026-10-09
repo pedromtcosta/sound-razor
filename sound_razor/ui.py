@@ -348,7 +348,11 @@ def make_server(library: Library, port: int = 8765):
                     result = self.api(method, path, query)
                     if result is not None:
                         self.respond(200, result)
-                elif method == "GET" and path in {"/", "/app.js", "/player.js", "/styles.css"}:
+                elif method == "GET" and path in {
+                    "/", "/app.js", "/player.js", "/styles.css", "/tempo-worklet.js",
+                    "/vendor/soundtouch/processor.js", "/vendor/soundtouch/soundtouch-processor.js.map",
+                    "/vendor/soundtouch/LICENSE", "/vendor/soundtouch/NOTICE.md",
+                }:
                     name = "index.html" if path == "/" else path[1:]
                     body = (STATIC / name).read_bytes().replace(b"__SESSION_TOKEN__", token.encode())
                     self.respond(200, body, mimetypes.guess_type(name)[0] or "text/plain")

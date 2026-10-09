@@ -60,6 +60,19 @@ class UITests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["projects"], [])
 
+    def test_pitch_preserving_player_assets_are_served_locally(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=15)
+        self.addCleanup(connection.close)
+        for asset in ("/player.js", "/tempo-worklet.js", "/vendor/soundtouch/processor.js"):
+            with self.subTest(asset=asset):
+                connection.request("GET", asset)
+                response = connection.getresponse()
+                self.assertEqual(response.status, 200)
+                self.assertIn(response.getheader("Content-Type"), ("text/javascript", "application/javascript"))
+                self.assertTrue(response.read())
+        self.assertEqual(self.request("GET", "/vendor/soundtouch/LICENSE", authorized=False)[0], 200)
+        self.assertEqual(self.request("GET", "/vendor/soundtouch/../../../pyproject.toml", authorized=False)[0], 404)
+
     def test_import_metadata_and_audio_download(self):
         query = urlencode({"filename": "Song.wav", "artist": "Artist", "title": "A <title>"})
         status, body = self.request("POST", f"/api/import?{query}", wav_bytes())

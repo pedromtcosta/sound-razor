@@ -34,3 +34,6 @@ jobs:
         run: |
           node --input-type=module --check < sound_razor/web/app.js
           node --input-type=module --check < sound_razor/web/player.js
+          node --input-type=module --check < sound_razor/web/tempo-worklet.js
+      - name: Test playback timing and pitch preservation
+        run: node --test tests/test_player.mjs

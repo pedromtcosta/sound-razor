@@ -3,6 +3,7 @@ import {StemPlayer} from './player.js';
 const $ = id => document.getElementById(id);
 const token = document.querySelector('meta[name="sound-razor-token"]').content;
 const player = new StemPlayer();
+player.onError = error => notice(error.message);
 const colors = ['#c6e69a', '#e8ad78', '#86bfb0', '#b1a0d9', '#e3cf80', '#84aacf'];
 let state = {root: null, projects: [], job: null};
 let selected = null;
@@ -187,7 +188,7 @@ function selectProject(id) {
 function clearAudio() {
   controller?.abort(); loading++; player.clear();
   $('tracks').replaceChildren();
-  for (const id of ['play','restart','seek','reset-mix']) $(id).disabled = true;
+  for (const id of ['play','restart','seek','reset-mix','playback-speed','reset-speed']) $(id).disabled = true;
   $('seek').value = 0; $('seek').max = 1; $('elapsed').textContent = '0:00'; $('duration').textContent = '0:00';
 }
 async function loadAudio(project) {
@@ -214,7 +215,7 @@ async function loadAudio(project) {
     player.setTracks(tracks);
     $('seek').max = player.duration;
     $('duration').textContent = time(player.duration);
-    for (const id of ['play','restart','seek','reset-mix']) $(id).disabled = false;
+    for (const id of ['play','restart','seek','reset-mix','playback-speed','reset-speed']) $(id).disabled = false;
     const durations = tracks.map(t => t.buffer.duration);
     $('audio-status').textContent = Math.max(...durations) - Math.min(...durations) > 0.25
       ? 'These stems have different durations. Shorter tracks will end first.' : '';
@@ -297,8 +298,8 @@ function animate() {
   const position = player.position();
   $('elapsed').textContent = time(position);
   if (document.activeElement !== $('seek')) $('seek').value = position;
-  $('play').textContent = player.playing ? 'Ⅱ' : '▶';
-  $('play').setAttribute('aria-label', player.playing ? 'Pause' : 'Play');
+  $('play').textContent = player.starting ? '…' : player.playing ? 'Ⅱ' : '▶';
+  $('play').setAttribute('aria-label', player.starting ? 'Cancel playback start' : player.playing ? 'Pause' : 'Play');
   document.querySelectorAll('.playhead').forEach(p => p.style.left = `${player.duration ? position/player.duration*100 : 0}%`);
   requestAnimationFrame(animate);
 }
@@ -422,11 +423,25 @@ $('separate').onclick = async () => {
   catch(error) { notice(error.message); renderProject(); }
 };
 $('cancel').onclick = () => api('/api/cancel',{}).then(refresh).catch(e => notice(e.message));
-$('play').onclick = () => player.playing ? player.pause() : player.play().catch(e => notice(e.message));
+$('play').onclick = () => player.playing || player.starting ? player.pause() : player.play().catch(e => notice(e.message));
 $('restart').onclick = () => player.seek(0).catch(e => notice(e.message));
 $('seek').oninput = () => { $('elapsed').textContent=time(Number($('seek').value)); };
 $('seek').onchange = () => player.seek(Number($('seek').value)).catch(e => notice(e.message));
 $('master-volume').oninput = () => player.setVolume(Number($('master-volume').value));
+function showSpeed() {
+  const percent = Number($('playback-speed').value);
+  $('speed-value').textContent = `${percent}%`;
+  $('playback-speed').setAttribute('aria-valuetext', `${percent} percent of original speed`);
+}
+$('playback-speed').oninput = showSpeed;
+$('playback-speed').onchange = () => {
+  showSpeed();
+  player.setPlaybackRate(Number($('playback-speed').value) / 100).catch(e => notice(e.message));
+};
+$('reset-speed').onclick = () => {
+  $('playback-speed').value = 100; showSpeed();
+  player.setPlaybackRate(1).catch(e => notice(e.message));
+};
 $('reset-mix').onclick = () => { for(const t of player.tracks){t.muted=false;t.solo=false;t.volume=1;} player.updateMix(); renderTracks(); };
 document.addEventListener('keydown', e => {
   if(e.code==='Space' && !['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target.tagName) && !document.querySelector('dialog[open]')) {

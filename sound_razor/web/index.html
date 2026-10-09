@@ -38,7 +38,15 @@
       <div id="tracks" class="tracks"></div>
       <div class="mix-note">Use M to mute a track and S to hear only the soloed tracks.</div>
     </section>
-    <footer class="transport"><button id="restart" class="icon" aria-label="Back to start" disabled>↤</button><button id="play" class="play" aria-label="Play" disabled>▶</button><span id="elapsed" class="time">0:00</span><label for="seek" class="sr-only">Playback position</label><input id="seek" type="range" min="0" max="1" step="0.01" value="0" disabled><span id="duration" class="time">0:00</span><div class="master-volume"><label for="master-volume">MASTER</label><input id="master-volume" type="range" min="0" max="1" step="0.01" value="0.7"></div></footer>
+    <footer class="transport">
+      <div class="transport-main"><button id="restart" class="icon" aria-label="Back to start" disabled>↤</button><button id="play" class="play" aria-label="Play" disabled>▶</button><span id="elapsed" class="time">0:00</span><label for="seek" class="sr-only">Playback position</label><input id="seek" type="range" min="0" max="1" step="0.01" value="0" disabled><span id="duration" class="time">0:00</span></div>
+      <div class="playback-speed">
+        <div class="speed-heading"><label for="playback-speed">SPEED</label><output id="speed-value" for="playback-speed">100%</output></div>
+        <div class="speed-controls"><input id="playback-speed" type="range" min="50" max="100" step="5" value="100" aria-describedby="speed-help" aria-valuetext="100 percent of original speed" disabled><button id="reset-speed" class="icon" title="Normal speed (100%)" aria-label="Reset playback speed to 100 percent" disabled>↺</button></div>
+        <span id="speed-help">Original pitch</span>
+      </div>
+      <div class="master-volume"><label for="master-volume">MASTER</label><input id="master-volume" type="range" min="0" max="1" step="0.01" value="0.7"></div>
+    </footer>
   </main>
 
   <dialog id="folder-dialog"><form id="folder-form"><div class="dialog-header"><h2>Projects folder</h2><button type="button" class="icon close-dialog" aria-label="Close">✕</button></div><p>Each project is a subfolder containing its recording, metadata, and separated tracks. Select a folder or create one.</p><label for="folder-path">Folder on this computer</label><div class="input-row"><input id="folder-path" required placeholder="/Users/you/Music/Sound Razor"><button type="button" id="browse-path" class="secondary">Browse</button></div><div class="folder-browser"><button type="button" id="folder-up" class="text-button">↑ Parent folder</button><div id="folder-children"></div></div><label class="checkbox"><input type="checkbox" id="create-folder"> Create folder if it doesn't exist</label><p class="form-error" id="folder-error" role="alert"></p><button type="submit" class="primary full">Use this folder</button></form></dialog>
